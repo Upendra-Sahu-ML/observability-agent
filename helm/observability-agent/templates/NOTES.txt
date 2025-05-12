@@ -1,0 +1,27 @@
+Thank you for installing {{ .Chart.Name }}.
+
+Your release is named {{ .Release.Name }}.
+
+The observability-agent system is now deploying with the following components:
+  - Orchestrator
+  - Metric Agent (connecting to Prometheus at {{ .Values.metricAgent.prometheus.url }})
+  - Log Agent (connecting to Loki at {{ .Values.logAgent.loki.url }})
+  - Deployment Agent
+  - Root Cause Agent
+  - Redis (used for inter-agent communication)
+
+{{- if .Values.redis.enabled }}
+Redis is being deployed as part of this chart and will be available at:
+  {{ include "observability-agent.fullname" . }}-redis:6379
+{{- else if .Values.redis.external.enabled }}
+The system will connect to your external Redis instance at:
+  {{ .Values.redis.external.host }}:{{ .Values.redis.external.port }}
+{{- end }}
+
+To test the system, you can send an alert message to the Orchestrator by using:
+
+kubectl port-forward svc/{{ include "observability-agent.fullname" . }}-redis 6379:6379
+redis-cli -h localhost -p 6379 publish alerts '{"id":"test1","labels":{"service":"myapp","namespace":"default"},"startsAt":"2023-01-01T00:00:00Z"}'
+
+For more information on how to use the Observability Agent, please see:
+https://github.com/yourusername/observability-agent

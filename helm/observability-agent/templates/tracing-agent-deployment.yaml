@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-tracing-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tracing-agent
+spec:
+  replicas: {{ .Values.tracingAgent.replicas }}
+  selector:
+    matchLabels:
+      {{- include "observability-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: tracing-agent
+  template:
+    metadata:
+      labels:
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: tracing-agent
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: tracing-agent
+          image: "{{ default .Values.agents.imageRegistry .Values.global.imageRegistry }}{{ .Values.tracingAgent.image.repository }}:{{ .Values.tracingAgent.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: REDIS_HOST
+              {{- if .Values.redis.external.enabled }}
+              value: {{ .Values.redis.external.host }}
+              {{- else }}
+              value: {{ include "observability-agent.fullname" . }}-redis
+              {{- end }}
+            - name: REDIS_PORT
+              {{- if .Values.redis.external.enabled }}
+              value: "{{ .Values.redis.external.port }}"
+              {{- else }}
+              value: "6379"
+              {{- end }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: apiKey
+            - name: OPENAI_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: model
+            - name: TEMPO_URL
+              value: {{ .Values.tracingAgent.tempo.url }}
+            {{- with .Values.agents.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.tracingAgent.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.tracingAgent.resources | nindent 12 }}

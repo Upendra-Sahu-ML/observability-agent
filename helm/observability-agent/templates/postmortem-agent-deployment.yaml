@@ -1,0 +1,56 @@
+{{- if .Values.postmortemAgent.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-postmortem-agent
+  labels:
+    app: {{ .Release.Name }}-postmortem-agent
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    release: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.postmortemAgent.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-postmortem-agent
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-postmortem-agent
+    spec:
+      containers:
+      - name: postmortem-agent
+        image: "{{ .Values.global.image.repository }}:{{ .Values.global.image.tag }}"
+        imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+        command: ["python", "-m", "agents.postmortem_agent.main"]
+        env:
+        - name: REDIS_HOST
+          value: {{ .Values.global.redis.host | quote }}
+        - name: REDIS_PORT
+          value: {{ .Values.global.redis.port | quote }}
+        - name: QDRANT_HOST
+          value: {{ .Values.global.qdrant.host | quote }}
+        - name: QDRANT_PORT
+          value: {{ .Values.global.qdrant.port | quote }}
+        resources:
+          requests:
+            cpu: {{ .Values.postmortemAgent.resources.requests.cpu }}
+            memory: {{ .Values.postmortemAgent.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.postmortemAgent.resources.limits.cpu }}
+            memory: {{ .Values.postmortemAgent.resources.limits.memory }}
+        ports:
+        - containerPort: 8000
+          name: http
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+{{- end }} 

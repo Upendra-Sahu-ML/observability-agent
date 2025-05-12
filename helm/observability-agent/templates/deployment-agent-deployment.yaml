@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-deployment-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: deployment-agent
+spec:
+  replicas: {{ .Values.deploymentAgent.replicas }}
+  selector:
+    matchLabels:
+      {{- include "observability-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: deployment-agent
+  template:
+    metadata:
+      labels:
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: deployment-agent
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: deployment-agent
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.deploymentAgent.image.repository }}:{{ .Values.deploymentAgent.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: REDIS_HOST
+              value: {{ include "observability-agent.redisHost" . | quote }}
+            - name: REDIS_PORT
+              value: {{ include "observability-agent.redisPort" . | quote }}
+            - name: GIT_REPO_PATH
+              value: {{ .Values.deploymentAgent.gitRepoPath | quote }}
+            - name: ARGOCD_SERVER
+              value: {{ .Values.deploymentAgent.argocdServer | quote }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: OPENAI_API_KEY
+            - name: OPENAI_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: OPENAI_MODEL
+            {{- range .Values.agents.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- range .Values.deploymentAgent.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.deploymentAgent.resources | nindent 12 }}

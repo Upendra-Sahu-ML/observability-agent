@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-runbook-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runbook-agent
+spec:
+  replicas: {{ .Values.runbookAgent.replicas }}
+  selector:
+    matchLabels:
+      {{- include "observability-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: runbook-agent
+  template:
+    metadata:
+      labels:
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: runbook-agent
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: runbook-agent
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.runbookAgent.image.repository }}:{{ .Values.runbookAgent.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: REDIS_HOST
+              value: {{ include "observability-agent.redisHost" . | quote }}
+            - name: REDIS_PORT
+              value: {{ include "observability-agent.redisPort" . | quote }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: OPENAI_API_KEY
+            - name: OPENAI_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: OPENAI_MODEL
+            {{- range .Values.agents.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- range .Values.runbookAgent.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.runbookAgent.resources | nindent 12 }}

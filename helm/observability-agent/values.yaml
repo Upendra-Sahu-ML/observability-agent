@@ -1,0 +1,316 @@
+# Default values for observability-agent
+# This is a YAML-formatted file.
+
+# Global settings
+global:
+  # Image registry and repository prefix for all images
+  imageRegistry: ""
+  # Pull policy for all images
+  imagePullPolicy: IfNotPresent
+  # Image pull secrets for private registries
+  imagePullSecrets: []
+
+# OpenAI API settings
+openai:
+  # API key for OpenAI (required)
+  apiKey: ""
+  # Model to use (default: gpt-4)
+  model: "gpt-4"
+
+# Redis configuration
+redis:
+  # Whether to deploy Redis as part of this chart
+  enabled: true
+  # Use external Redis instance
+  external:
+    enabled: false
+    host: redis
+    port: 6379
+  # Redis image configuration
+  image:
+    repository: redis
+    tag: 7
+  # Redis resource requests and limits
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  # Redis persistence settings
+  persistence:
+    enabled: false
+    size: 1Gi
+    storageClass: ""
+
+# Qdrant configuration
+qdrant:
+  # Whether to deploy Qdrant as part of this chart
+  enabled: true
+  # Use external Qdrant instance
+  external:
+    enabled: false
+    url: http://qdrant:6333
+  # Qdrant image configuration
+  image:
+    repository: qdrant/qdrant
+    tag: v1.7.4
+  # Qdrant resource requests and limits
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  # Qdrant persistence settings
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+  # Qdrant service configuration
+  service:
+    type: ClusterIP
+    port: 6333
+  # Qdrant API configuration
+  api:
+    port: 6333
+    grpcPort: 6334
+  # Qdrant settings
+  settings:
+    storage:
+      # Enable snapshot creation
+      snapshot:
+        enabled: true
+        interval: 24h
+      # Enable payload indexing
+      payloadIndexing:
+        enabled: true
+    # Enable telemetry
+    telemetry:
+      enabled: false
+
+# Common settings for all agents
+agents:
+  # Registry and repository for agent images
+  imageRegistry: ""
+  # Common environment variables for all agents
+  env:
+    - name: PYTHONUNBUFFERED
+      value: "1"
+  # Common resource settings
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+  # Agent enablement configuration
+  enabled:
+    metric: true
+    log: true
+    deployment: true
+    tracing: true
+    rootCause: true
+    runbook: true
+    notification: true
+    postmortem: true
+
+# Orchestrator configuration
+orchestrator:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent/orchestrator
+    tag: latest
+  # Service settings
+  service:
+    type: ClusterIP
+    port: 80
+  # Resource settings
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+  # Additional environment variables
+  env: []
+
+# Metric Agent configuration
+metricAgent:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent/metric-agent
+    tag: latest
+  # Resource settings
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+  # Additional environment variables
+  env: []
+  # Prometheus settings
+  prometheus:
+    url: "http://prometheus-server.monitoring:9090"
+
+# Log Agent configuration
+logAgent:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent/log-agent
+    tag: latest
+  # Resource settings
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+  # Additional environment variables
+  env: []
+  # Loki settings
+  loki:
+    url: "http://loki-gateway.monitoring:3100"
+
+# Deployment Agent configuration
+deploymentAgent:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent/deployment-agent
+    tag: latest
+  # Resource settings
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+  # Additional environment variables
+  env: []
+  # ArgoCD settings
+  argocd:
+    url: "https://argocd-server.argocd:443"
+    insecure: true
+  # Git repository path
+  gitRepoPath: /app/repo
+
+# Root Cause Agent configuration
+rootCauseAgent:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent/root-cause-agent
+    tag: latest
+  # Resource settings
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+  # Additional environment variables
+  env: []
+
+# Tracing Agent configuration
+tracingAgent:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent/tracing-agent
+    tag: latest
+  # Resource settings
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+  # Additional environment variables
+  env: []
+  # Tempo settings
+  tempo:
+    url: "http://tempo:3100"
+
+# Runbook Agent configuration
+runbookAgent:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent/runbook-agent
+    tag: latest
+  # Resource settings
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+  # Additional environment variables
+  env: []
+
+# Notification Agent configuration
+notificationAgent:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent/notification-agent
+    tag: latest
+  # Resource settings
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  # Additional environment variables
+  env: []
+
+# Postmortem Agent configuration
+postmortemAgent:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent/postmortem-agent
+    tag: latest
+  # Resource settings
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  # Additional environment variables
+  env: []
+
+# Knowledge base configuration
+knowledgeBase:
+  qdrant:
+    url: http://qdrant:6333
+  postmortemTemplateDir: /app/templates
+  runbookDir: /app/runbooks

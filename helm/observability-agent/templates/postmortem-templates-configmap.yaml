@@ -1,0 +1,38 @@
+{{- if .Values.postmortemAgent.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-postmortem-templates
+  labels:
+    app: {{ .Release.Name }}-postmortem-agent
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    release: {{ .Release.Name }}
+data:
+  template.md: |
+    # Incident Postmortem
+
+    ## Incident Summary
+    - **Incident ID**: {{ incident_id }}
+    - **Start Time**: {{ start_time }}
+    - **End Time**: {{ end_time }}
+    - **Severity**: {{ severity }}
+    - **Status**: {{ status }}
+
+    ## Impact
+    {{ impact }}
+
+    ## Root Cause
+    {{ root_cause }}
+
+    ## Timeline
+    {{ timeline }}
+
+    ## Actions Taken
+    {{ actions_taken }}
+
+    ## Lessons Learned
+    {{ lessons_learned }}
+
+    ## Action Items
+    {{ action_items }}
+{{- end }} 

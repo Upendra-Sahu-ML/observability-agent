@@ -1,0 +1,27 @@
+# File: docker-compose.yaml
+version: '3.9'
+services:
+  orchestrator:
+    build: ./orchestrator
+    depends_on:
+      - redis
+  metric_agent:
+    build: ./agents/metric_agent
+    depends_on:
+      - redis
+  log_agent:
+    build: ./agents/log_agent
+    depends_on:
+      - redis
+  deployment_agent:
+    build: ./agents/deployment_agent
+    depends_on:
+      - redis
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+  root_cause_agent:
+    build: ./agents/root_cause_agent
+    depends_on:
+      - redis

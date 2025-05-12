@@ -1,0 +1,123 @@
+{{- if and .Values.qdrant.enabled (not .Values.qdrant.external.enabled) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-qdrant
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: qdrant
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "observability-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: qdrant
+  template:
+    metadata:
+      labels:
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: qdrant
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: qdrant
+          image: "{{ .Values.qdrant.image.repository }}:{{ .Values.qdrant.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.qdrant.api.port }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.qdrant.api.grpcPort }}
+              protocol: TCP
+          env:
+            - name: QDRANT_STORAGE_PATH
+              value: /qdrant/storage
+            - name: QDRANT_SERVICE_PORT
+              value: {{ .Values.qdrant.api.port | quote }}
+            - name: QDRANT_SERVICE_GRPC_PORT
+              value: {{ .Values.qdrant.api.grpcPort | quote }}
+            {{- if .Values.qdrant.settings.storage.snapshot.enabled }}
+            - name: QDRANT_STORAGE_SNAPSHOT_ENABLED
+              value: "true"
+            - name: QDRANT_STORAGE_SNAPSHOT_INTERVAL
+              value: {{ .Values.qdrant.settings.storage.snapshot.interval | quote }}
+            {{- end }}
+            {{- if .Values.qdrant.settings.storage.payloadIndexing.enabled }}
+            - name: QDRANT_STORAGE_PAYLOAD_INDEXING_ENABLED
+              value: "true"
+            {{- end }}
+            {{- if not .Values.qdrant.settings.telemetry.enabled }}
+            - name: QDRANT_TELEMETRY_DISABLED
+              value: "true"
+            {{- end }}
+          volumeMounts:
+            - name: qdrant-storage
+              mountPath: /qdrant/storage
+          resources:
+            {{- toYaml .Values.qdrant.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: qdrant-storage
+          {{- if .Values.qdrant.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "observability-agent.fullname" . }}-qdrant
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-qdrant
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: qdrant
+spec:
+  type: {{ .Values.qdrant.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.qdrant.service.port }}
+      targetPort: http
+      protocol: TCP
+    - name: grpc
+      port: {{ .Values.qdrant.api.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+  selector:
+    {{- include "observability-agent.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: qdrant
+{{- if .Values.qdrant.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-qdrant
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: qdrant
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.qdrant.persistence.size }}
+  {{- if .Values.qdrant.persistence.storageClass }}
+  storageClassName: {{ .Values.qdrant.persistence.storageClass }}
+  {{- end }}
+{{- end }}
+{{- end }} 

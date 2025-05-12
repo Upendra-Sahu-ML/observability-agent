@@ -1,0 +1,68 @@
+{{- if .Values.notificationAgent.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-notification-agent
+  labels:
+    app: {{ .Release.Name }}-notification-agent
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    release: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.notificationAgent.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-notification-agent
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-notification-agent
+    spec:
+      containers:
+      - name: notification-agent
+        image: "{{ .Values.global.image.repository }}:{{ .Values.global.image.tag }}"
+        imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+        command: ["python", "-m", "agents.notification_agent.main"]
+        env:
+        - name: REDIS_HOST
+          value: {{ .Values.global.redis.host | quote }}
+        - name: REDIS_PORT
+          value: {{ .Values.global.redis.port | quote }}
+        - name: QDRANT_HOST
+          value: {{ .Values.global.qdrant.host | quote }}
+        - name: QDRANT_PORT
+          value: {{ .Values.global.qdrant.port | quote }}
+        - name: SLACK_WEBHOOK_URL
+          value: {{ .Values.notificationAgent.slack.webhookUrl | quote }}
+        - name: SLACK_DEFAULT_CHANNEL
+          value: {{ .Values.notificationAgent.slack.defaultChannel | quote }}
+        - name: PAGERDUTY_API_KEY
+          value: {{ .Values.notificationAgent.pagerduty.apiKey | quote }}
+        - name: PAGERDUTY_SERVICE_ID
+          value: {{ .Values.notificationAgent.pagerduty.serviceId | quote }}
+        - name: WEBEX_ACCESS_TOKEN
+          value: {{ .Values.notificationAgent.webex.accessToken | quote }}
+        - name: WEBEX_DEFAULT_SPACE
+          value: {{ .Values.notificationAgent.webex.defaultSpace | quote }}
+        resources:
+          requests:
+            cpu: {{ .Values.notificationAgent.resources.requests.cpu }}
+            memory: {{ .Values.notificationAgent.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.notificationAgent.resources.limits.cpu }}
+            memory: {{ .Values.notificationAgent.resources.limits.memory }}
+        ports:
+        - containerPort: 8000
+          name: http
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+{{- end }} 

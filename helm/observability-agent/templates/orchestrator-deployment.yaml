@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-orchestrator
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: orchestrator
+spec:
+  replicas: {{ .Values.orchestrator.replicas }}
+  selector:
+    matchLabels:
+      {{- include "observability-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: orchestrator
+  template:
+    metadata:
+      labels:
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: orchestrator
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: orchestrator
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.orchestrator.image.repository }}:{{ .Values.orchestrator.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: REDIS_HOST
+              value: {{ include "observability-agent.redisHost" . | quote }}
+            - name: REDIS_PORT
+              value: {{ include "observability-agent.redisPort" . | quote }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: OPENAI_API_KEY
+            - name: OPENAI_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: OPENAI_MODEL
+            # Agent enablement configuration
+            - name: ENABLE_METRIC_AGENT
+              value: {{ .Values.agents.enabled.metric | quote }}
+            - name: ENABLE_LOG_AGENT
+              value: {{ .Values.agents.enabled.log | quote }}
+            - name: ENABLE_DEPLOYMENT_AGENT
+              value: {{ .Values.agents.enabled.deployment | quote }}
+            - name: ENABLE_TRACING_AGENT
+              value: {{ .Values.agents.enabled.tracing | quote }}
+            - name: ENABLE_ROOT_CAUSE_AGENT
+              value: {{ .Values.agents.enabled.rootCause | quote }}
+            - name: ENABLE_RUNBOOK_AGENT
+              value: {{ .Values.agents.enabled.runbook | quote }}
+            - name: ENABLE_NOTIFICATION_AGENT
+              value: {{ .Values.agents.enabled.notification | quote }}
+            - name: ENABLE_POSTMORTEM_AGENT
+              value: {{ .Values.agents.enabled.postmortem | quote }}
+            # Knowledge base configuration
+            - name: QDRANT_URL
+              value: {{ if .Values.qdrant.external.enabled }}{{ .Values.qdrant.external.url | quote }}{{ else }}"http://{{ include "observability-agent.fullname" . }}-qdrant:{{ .Values.qdrant.service.port }}"{{ end }}
+            - name: POSTMORTEM_TEMPLATE_DIR
+              value: {{ .Values.knowledgeBase.postmortemTemplateDir | quote }}
+            - name: RUNBOOK_DIR
+              value: {{ .Values.knowledgeBase.runbookDir | quote }}
+            {{- range .Values.agents.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- range .Values.orchestrator.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.orchestrator.resources | nindent 12 }}

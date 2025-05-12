@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-log-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: log-agent
+spec:
+  replicas: {{ .Values.logAgent.replicas }}
+  selector:
+    matchLabels:
+      {{- include "observability-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: log-agent
+  template:
+    metadata:
+      labels:
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: log-agent
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: log-agent
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.logAgent.image.repository }}:{{ .Values.logAgent.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: REDIS_HOST
+              value: {{ include "observability-agent.redisHost" . | quote }}
+            - name: REDIS_PORT
+              value: {{ include "observability-agent.redisPort" . | quote }}
+            - name: LOKI_URL
+              value: {{ .Values.logAgent.loki.url | quote }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: OPENAI_API_KEY
+            - name: OPENAI_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: OPENAI_MODEL
+            {{- range .Values.agents.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- range .Values.logAgent.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.logAgent.resources | nindent 12 }}

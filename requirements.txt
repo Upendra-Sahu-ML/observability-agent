@@ -1,0 +1,5 @@
+redis
+openai
+python-dotenv
+crewai
+langchain-openai
