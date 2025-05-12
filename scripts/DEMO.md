@@ -19,7 +19,7 @@
 
    # 3. Install alert publisher
    pip install redis
-   chmod +x tools/alert_publisher.py
+   chmod +x scripts/alert_publisher.py
    ```
 
 ## Demo Structure (60 minutes)
@@ -56,7 +56,7 @@ redis-cli
 > SUBSCRIBE alerts
 
 # Terminal 3: Generate alert
-./tools/alert_publisher.py --alert-type cpu --count 1
+./scripts/alert_publisher.py --alert-type cpu --count 1
 ```
 
 **What to Explain:**
@@ -98,9 +98,9 @@ kubectl logs -f deployment/observability-agent-postmortem-agent
 #### D. Complex Scenario (5 minutes)
 ```bash
 # Simulate complex incident
-./tools/alert_publisher.py --alert-type cpu --count 1
-./tools/alert_publisher.py --alert-type error_rate --count 1
-./tools/alert_publisher.py --alert-type latency --count 1
+./scripts/alert_publisher.py --alert-type cpu --count 1
+./scripts/alert_publisher.py --alert-type error_rate --count 1
+./scripts/alert_publisher.py --alert-type latency --count 1
 ```
 
 **What to Explain:**
@@ -136,7 +136,7 @@ kubectl logs -f deployment/observability-agent-postmortem-agent
 #### C. System Scalability
 ```bash
 # Load test
-./tools/alert_publisher.py --count 10 --interval 2
+./scripts/alert_publisher.py --count 10 --interval 2
 
 # Monitor resources
 kubectl top pods

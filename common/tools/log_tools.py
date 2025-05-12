@@ -62,6 +62,107 @@ class LokiQueryTool(AgentTool):
         else:
             raise Exception(f"Loki query failed with status {response.status_code}: {response.text}")
 
+    def get_error_patterns(self, namespace, service, start=None, end=None, limit=100):
+        """
+        Get common error patterns from logs
+        
+        Args:
+            namespace (str): Kubernetes namespace
+            service (str): Service name
+            start (str, optional): Start time
+            end (str, optional): End time
+            limit (int, optional): Maximum number of logs to analyze
+            
+        Returns:
+            dict: Common error patterns and their frequencies
+        """
+        query = f'{{namespace="{namespace}", service="{service}"}} |~ "(?i)(error|exception|fail|fatal)"'
+        logs = self.execute(query, start, end, limit)
+        
+        error_patterns = {}
+        for stream in logs.get("result", []):
+            for entry in stream.get("values", []):
+                log_line = entry[1]
+                # Extract error patterns using regex
+                import re
+                error_matches = re.findall(r'(?i)(error|exception|fail|fatal)[^:]*:?\s*([^\n]+)', log_line)
+                for error_type, message in error_matches:
+                    if error_type not in error_patterns:
+                        error_patterns[error_type] = {}
+                    if message not in error_patterns[error_type]:
+                        error_patterns[error_type][message] = 0
+                    error_patterns[error_type][message] += 1
+        
+        return error_patterns
+
+    def get_service_latency(self, namespace, service, start=None, end=None):
+        """
+        Calculate service latency from logs
+        
+        Args:
+            namespace (str): Kubernetes namespace
+            service (str): Service name
+            start (str, optional): Start time
+            end (str, optional): End time
+            
+        Returns:
+            dict: Latency statistics
+        """
+        query = f'{{namespace="{namespace}", service="{service}"}} |~ "duration=[0-9]+"'
+        logs = self.execute(query, start, end)
+        
+        latencies = []
+        for stream in logs.get("result", []):
+            for entry in stream.get("values", []):
+                log_line = entry[1]
+                import re
+                duration_match = re.search(r'duration=(\d+)', log_line)
+                if duration_match:
+                    latencies.append(int(duration_match.group(1)))
+        
+        if not latencies:
+            return {"error": "No latency data found"}
+            
+        return {
+            "count": len(latencies),
+            "min": min(latencies),
+            "max": max(latencies),
+            "avg": sum(latencies) / len(latencies),
+            "p95": sorted(latencies)[int(len(latencies) * 0.95)],
+            "p99": sorted(latencies)[int(len(latencies) * 0.99)]
+        }
+
+    def get_service_errors(self, namespace, service, start=None, end=None, limit=100):
+        """
+        Get service error statistics
+        
+        Args:
+            namespace (str): Kubernetes namespace
+            service (str): Service name
+            start (str, optional): Start time
+            end (str, optional): End time
+            limit (int, optional): Maximum number of logs to analyze
+            
+        Returns:
+            dict: Error statistics
+        """
+        # Get total request count
+        total_query = f'{{namespace="{namespace}", service="{service}"}}'
+        total_logs = self.execute(total_query, start, end, limit)
+        total_requests = sum(len(stream.get("values", [])) for stream in total_logs.get("result", []))
+        
+        # Get error count
+        error_query = f'{{namespace="{namespace}", service="{service}"}} |~ "(?i)(error|exception|fail|fatal)"'
+        error_logs = self.execute(error_query, start, end, limit)
+        error_count = sum(len(stream.get("values", [])) for stream in error_logs.get("result", []))
+        
+        return {
+            "total_requests": total_requests,
+            "error_count": error_count,
+            "error_rate": error_count / total_requests if total_requests > 0 else 0,
+            "error_patterns": self.get_error_patterns(namespace, service, start, end, limit)
+        }
+
 class PodLogTool(AgentTool):
     """Tool for retrieving Kubernetes pod logs using kubectl"""
     
