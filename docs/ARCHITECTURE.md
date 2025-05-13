@@ -8,7 +8,7 @@ The Observability Agent System is a distributed, AI-powered observability platfo
 
 ### Visual Representation
 
-![Observability Agent System Architecture](docs/system-architecture.svg)
+![Observability Agent System Architecture](./system-architecture.svg)
 
 The diagram above shows the key components of the system and their interactions. For a detailed explanation, see the sections below.
 
