@@ -1,7 +1,12 @@
 import asyncio
-from postmortem import PostmortemAgent
 import os
+import sys
 from dotenv import load_dotenv
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from agents.postmortem_agent.postmortem import PostmortemAgent
 
 def main():
     # Load environment variables
@@ -9,7 +14,7 @@ def main():
 
     # Initialize the postmortem agent with configuration from env vars or use defaults
     template_dir = os.environ.get("TEMPLATE_DIR", "/app/templates")
-    nats_server = os.environ.get("NATS_URL", "nats://nats:4222")
+    nats_server = os.environ.get("NATS_URL", "nats://localhost:4222")  # Use localhost for local testing
     
     agent = PostmortemAgent(template_dir=template_dir, nats_server=nats_server)
     

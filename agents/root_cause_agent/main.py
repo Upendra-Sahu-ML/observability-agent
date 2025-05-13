@@ -1,14 +1,19 @@
 import asyncio
-from root_cause import RootCauseAgent
 import os
+import sys
 from dotenv import load_dotenv
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from agents.root_cause_agent.root_cause import RootCauseAgent
 
 def main():
     # Load environment variables
     load_dotenv()
     
     # Initialize the root cause agent with env vars or use defaults
-    nats_server = os.environ.get("NATS_URL", "nats://nats:4222")
+    nats_server = os.environ.get("NATS_URL", "nats://localhost:4222")  # Use localhost for local testing
     
     agent = RootCauseAgent(nats_server=nats_server)
     

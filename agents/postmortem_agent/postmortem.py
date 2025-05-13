@@ -8,6 +8,7 @@ from datetime import datetime
 import jinja2
 from crewai import Agent, Task, Crew
 from langchain_openai import ChatOpenAI
+from langchain.tools import BaseTool, StructuredTool, tool
 from dotenv import load_dotenv
 
 # Configure logging
@@ -44,37 +45,59 @@ class PostmortemAgent:
             goal="Create comprehensive incident postmortem documents",
             backstory="You are an expert at creating detailed, accurate postmortem documents that help teams learn from incidents.",
             verbose=True,
-            llm=self.llm
+            llm=self.llm,
+            tools=[] # Pass empty list to avoid the KeyError
         )
     
     async def connect(self):
         """Connect to NATS server and set up JetStream"""
-        # Connect to NATS server
-        self.nats_client = await nats.connect(self.nats_server)
-        logger.info(f"Connected to NATS server at {self.nats_server}")
-        
-        # Create JetStream context
-        self.js = self.nats_client.jetstream()
-        
-        # Ensure streams exist
         try:
-            # Create stream for agent tasks
-            await self.js.add_stream(
-                name="AGENT_TASKS", 
-                subjects=["postmortem_agent"]
-            )
-            logger.info("Created or confirmed AGENT_TASKS stream")
+            # Connect to NATS server
+            self.nats_client = await nats.connect(self.nats_server)
+            logger.info(f"Connected to NATS server at {self.nats_server}")
             
-            # Create stream for responses
-            await self.js.add_stream(
-                name="RESPONSES", 
-                subjects=["orchestrator_response"]
-            )
-            logger.info("Created or confirmed RESPONSES stream")
+            # Create JetStream context
+            self.js = self.nats_client.jetstream()
             
-        except nats.errors.Error as e:
-            # Stream might already exist
-            logger.info(f"Stream setup: {str(e)}")
+            # Check if streams exist, don't try to create them if they do
+            try:
+                # Look up streams first
+                streams = []
+                try:
+                    streams = await self.js.streams_info()
+                except Exception as e:
+                    logger.warning(f"Failed to get streams info: {str(e)}")
+
+                # Get stream names
+                stream_names = [stream.config.name for stream in streams]
+                
+                # Only create AGENT_TASKS stream if it doesn't already exist
+                if "AGENT_TASKS" not in stream_names:
+                    await self.js.add_stream(
+                        name="AGENT_TASKS", 
+                        subjects=["postmortem_agent"]
+                    )
+                    logger.info("Created AGENT_TASKS stream")
+                else:
+                    logger.info("AGENT_TASKS stream already exists")
+                
+                # Only create RESPONSES stream if it doesn't already exist
+                if "RESPONSES" not in stream_names:
+                    await self.js.add_stream(
+                        name="RESPONSES", 
+                        subjects=["orchestrator_response"]
+                    )
+                    logger.info("Created RESPONSES stream")
+                else:
+                    logger.info("RESPONSES stream already exists")
+                
+            except nats.errors.Error as e:
+                # Print error but don't raise - we can still work with existing streams
+                logger.warning(f"Stream setup error: {str(e)}")
+        
+        except Exception as e:
+            logger.error(f"Failed to connect to NATS: {str(e)}")
+            raise
     
     def _get_current_timestamp(self):
         """Get current timestamp in ISO format"""

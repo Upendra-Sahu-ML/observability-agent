@@ -1,14 +1,19 @@
 import asyncio
-from notification import NotificationAgent
 import os
+import sys
 from dotenv import load_dotenv
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from agents.notification_agent.notification import NotificationAgent
 
 def main():
     # Load environment variables
     load_dotenv()
     
     # Initialize the notification agent with env vars or use defaults
-    nats_server = os.environ.get("NATS_URL", "nats://nats:4222")
+    nats_server = os.environ.get("NATS_URL", "nats://localhost:4222")  # Use localhost for local testing
     
     agent = NotificationAgent(nats_server=nats_server)
     

@@ -129,7 +129,7 @@ async def startup_event():
     
     # Initialize the tracing agent with configuration from env vars
     tempo_url = os.environ.get("TEMPO_URL", "http://tempo:3100")
-    nats_server = os.environ.get("NATS_URL", "nats://nats:4222")
+    nats_server = os.environ.get("NATS_URL", "nats://localhost:4222")  # Use localhost for local testing
     
     tracing_agent = TracingAgent(tempo_url=tempo_url, nats_server=nats_server)
     logger.info("[TracingAgent] Starting tracing agent...")

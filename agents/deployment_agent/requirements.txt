@@ -1,11 +1,5 @@
-requests>=2.28.0
-python-dotenv>=1.0.0
-crewai>=0.28.0
+# Deployment specific dependencies
 kubernetes>=26.1.0
-PyYAML>=6.0
 GitPython>=3.1.30
 # ArgoCD specific dependencies
-argocd-python-client>=0.0.1
-urllib3>=1.26.0
-GitPython==3.1.32
-nats-py==2.4.0
+argocd>=0.5.0

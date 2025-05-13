@@ -73,35 +73,54 @@ class OrchestratorAgent:
         """Set up the required NATS streams"""
         try:
             # Create stream for alerts
-            await self.js.add_stream(name="ALERTS", 
+            try:
+                await self.js.add_stream(name="ALERTS", 
                                      subjects=["alerts", "alerts.*"])
-            logger.info("Created ALERTS stream")
+                logger.info("Created ALERTS stream")
+            except nats.errors.Error as e:
+                # Stream might already exist
+                logger.info(f"ALERTS stream setup: {str(e)}")
             
             # Create stream for agent responses
-            await self.js.add_stream(name="RESPONSES", 
+            try:
+                await self.js.add_stream(name="RESPONSES", 
                                      subjects=["orchestrator_response", "root_cause_result"])
-            logger.info("Created RESPONSES stream")
+                logger.info("Created RESPONSES stream")
+            except nats.errors.Error as e:
+                # Stream might already exist
+                logger.info(f"RESPONSES stream setup: {str(e)}")
             
             # Create stream for agent-specific messages
-            await self.js.add_stream(name="AGENT_TASKS", 
+            try:
+                await self.js.add_stream(name="AGENT_TASKS", 
                                      subjects=["metric_agent", "log_agent", "deployment_agent", 
                                                "tracing_agent", "notification_agent", "postmortem_agent"])
-            logger.info("Created AGENT_TASKS stream")
+                logger.info("Created AGENT_TASKS stream")
+            except nats.errors.Error as e:
+                # Stream might already exist
+                logger.info(f"AGENT_TASKS stream setup: {str(e)}")
             
             # Create stream for alert data requests
-            await self.js.add_stream(name="ALERT_DATA", 
+            try:
+                await self.js.add_stream(name="ALERT_DATA", 
                                      subjects=["alert_data_request", "alert_data_response.*"])
-            logger.info("Created ALERT_DATA stream")
+                logger.info("Created ALERT_DATA stream")
+            except nats.errors.Error as e:
+                # Stream might already exist
+                logger.info(f"ALERT_DATA stream setup: {str(e)}")
             
             # Create stream for root cause analysis
-            await self.js.add_stream(name="ROOT_CAUSE", 
+            try:
+                await self.js.add_stream(name="ROOT_CAUSE", 
                                      subjects=["root_cause_analysis"])
-            logger.info("Created ROOT_CAUSE stream")
+                logger.info("Created ROOT_CAUSE stream")
+            except nats.errors.Error as e:
+                # Stream might already exist
+                logger.info(f"ROOT_CAUSE stream setup: {str(e)}")
             
-        except nats.errors.Error as e:
-            # Streams might already exist
-            logger.info(f"Stream setup: {str(e)}")
-
+        except Exception as e:
+            logger.error(f"Failed to setup streams: {str(e)}")
+            raise
     def handle_agent_response(self, response_data):
         """Process responses from individual agents and coordinate next steps"""
         agent_type = response_data.get('agent')

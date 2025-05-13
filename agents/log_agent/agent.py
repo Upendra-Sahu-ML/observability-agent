@@ -7,6 +7,7 @@ from nats.js.api import ConsumerConfig, DeliverPolicy
 from datetime import datetime
 from crewai import Agent, Task, Crew
 from langchain_openai import ChatOpenAI
+from langchain.tools import BaseTool, StructuredTool, tool
 from dotenv import load_dotenv
 from common.tools.log_tools import (
     LokiQueryTool,
@@ -42,7 +43,27 @@ class LogAgent:
         # Initialize log tools
         self.loki_tool = LokiQueryTool(loki_url=self.loki_url)
         self.pod_log_tool = PodLogTool()
-        self.file_log_tool = FileLogTool(log_directory=self.log_directory)
+        # FileLogTool doesn't accept constructor parameters
+        self.file_log_tool = FileLogTool()
+        
+        # Convert functions to proper LangChain tools
+        self.langchain_tools = [
+            StructuredTool.from_function(
+                self.loki_tool.execute,
+                name="loki_query",
+                description="Query logs from Loki using LogQL"
+            ),
+            StructuredTool.from_function(
+                self.pod_log_tool.execute,
+                name="pod_logs",
+                description="Retrieve logs from Kubernetes pods using kubectl"
+            ),
+            StructuredTool.from_function(
+                self.file_log_tool_wrapper,
+                name="file_logs", 
+                description="Retrieve and analyze logs from local files"
+            )
+        ]
         
         # Create a crewAI agent for log analysis
         self.log_analyzer = Agent(
@@ -51,41 +72,78 @@ class LogAgent:
             backstory="You are an expert at analyzing application logs and identifying error patterns that could indicate system issues.",
             verbose=True,
             llm=self.llm,
-            tools=[
-                self.loki_tool.execute, 
-                self.pod_log_tool.execute,
-                self.file_log_tool.execute
-            ]
+            tools=self.langchain_tools
         )
+    
+    def file_log_tool_wrapper(self, file_name=None, pattern=None, max_lines=1000, tail=None):
+        """
+        Retrieve and optionally filter logs from local files
+        
+        Args:
+            file_name (str): Name of the log file (will be appended to log_directory)
+            pattern (str, optional): Grep pattern to filter log lines
+            max_lines (int, optional): Maximum number of lines to process
+            tail (int, optional): Get only the last N lines of the file
+            
+        Returns:
+            dict: Filtered log contents or error message
+        """
+        # Construct the full file path by combining log_directory and file_name
+        if not file_name:
+            return {"error": "No file name provided"}
+            
+        file_path = os.path.join(self.log_directory, file_name)
+        return self.file_log_tool.execute(file_path=file_path, pattern=pattern, max_lines=max_lines, tail=tail)
     
     async def connect(self):
         """Connect to NATS server and set up JetStream"""
-        # Connect to NATS server
-        self.nats_client = await nats.connect(self.nats_server)
-        logger.info(f"Connected to NATS server at {self.nats_server}")
-        
-        # Create JetStream context
-        self.js = self.nats_client.jetstream()
-        
-        # Ensure streams exist
         try:
-            # Create stream for agent tasks
-            await self.js.add_stream(
-                name="AGENT_TASKS", 
-                subjects=["log_agent"]
-            )
-            logger.info("Created or confirmed AGENT_TASKS stream")
+            # Connect to NATS server
+            self.nats_client = await nats.connect(self.nats_server)
+            logger.info(f"Connected to NATS server at {self.nats_server}")
             
-            # Create stream for responses
-            await self.js.add_stream(
-                name="RESPONSES", 
-                subjects=["orchestrator_response"]
-            )
-            logger.info("Created or confirmed RESPONSES stream")
+            # Create JetStream context
+            self.js = self.nats_client.jetstream()
             
-        except nats.errors.Error as e:
-            # Stream might already exist
-            logger.info(f"Stream setup: {str(e)}")
+            # Check if streams exist, don't try to create them if they do
+            try:
+                # Look up streams first
+                streams = []
+                try:
+                    streams = await self.js.streams_info()
+                except Exception as e:
+                    logger.warning(f"Failed to get streams info: {str(e)}")
+
+                # Get stream names
+                stream_names = [stream.config.name for stream in streams]
+                
+                # Only create AGENT_TASKS stream if it doesn't already exist
+                if "AGENT_TASKS" not in stream_names:
+                    await self.js.add_stream(
+                        name="AGENT_TASKS", 
+                        subjects=["log_agent"]
+                    )
+                    logger.info("Created AGENT_TASKS stream")
+                else:
+                    logger.info("AGENT_TASKS stream already exists")
+                
+                # Only create RESPONSES stream if it doesn't already exist
+                if "RESPONSES" not in stream_names:
+                    await self.js.add_stream(
+                        name="RESPONSES", 
+                        subjects=["orchestrator_response"]
+                    )
+                    logger.info("Created RESPONSES stream")
+                else:
+                    logger.info("RESPONSES stream already exists")
+                
+            except nats.errors.Error as e:
+                # Print error but don't raise - we can still work with existing streams
+                logger.warning(f"Stream setup error: {str(e)}")
+        
+        except Exception as e:
+            logger.error(f"Failed to connect to NATS: {str(e)}")
+            raise
     
     def _determine_observed_issue(self, alert, logs_data, analysis_result):
         """Determine the type of log issue observed based on the analysis"""

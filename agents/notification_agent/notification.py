@@ -1,11 +1,13 @@
 import os
 import json
 import logging
+import asyncio
 import nats
 from nats.js.api import ConsumerConfig, DeliverPolicy
 from datetime import datetime
 from crewai import Agent, Task, Crew
 from langchain_openai import ChatOpenAI
+from langchain.tools import BaseTool, StructuredTool, tool
 from dotenv import load_dotenv
 from common.tools.notification_tools import (
     SlackNotificationTool,
@@ -39,6 +41,13 @@ class NotificationAgent:
         self.pagerduty_tool = PagerDutyNotificationTool()
         self.webex_tool = WebexNotificationTool()
         
+        # Convert functions to proper LangChain tools
+        self.langchain_tools = [
+            StructuredTool.from_function(self.slack_tool.execute),
+            StructuredTool.from_function(self.pagerduty_tool.execute),
+            StructuredTool.from_function(self.webex_tool.execute)
+        ]
+        
         # Create a crewAI agent for notification management
         self.notification_manager = Agent(
             role="Notification Manager",
@@ -46,27 +55,68 @@ class NotificationAgent:
             backstory="You are an expert at creating effective alerts that reach the right audience through the most appropriate channels.",
             verbose=True,
             llm=self.llm,
-            tools=[self.slack_tool.execute, self.pagerduty_tool.execute, self.webex_tool.execute]
+            tools=self.langchain_tools
         )
     
     async def connect(self):
         """Connect to NATS server and set up JetStream"""
-        # Connect to NATS server
-        self.nats_client = await nats.connect(self.nats_server)
-        logger.info(f"Connected to NATS server at {self.nats_server}")
-        
-        # Create JetStream context
-        self.js = self.nats_client.jetstream()
-        
-        # Ensure streams exist
         try:
-            # Create stream for notification requests if it doesn't exist
-            await self.js.add_stream(name="NOTIFICATIONS", 
-                                     subjects=["notification_requests"])
-            logger.info("Created NOTIFICATIONS stream")
-        except nats.errors.Error as e:
-            # Stream might already exist
-            logger.info(f"Stream setup: {str(e)}")
+            # Connect to NATS server
+            self.nats_client = await nats.connect(self.nats_server)
+            logger.info(f"Connected to NATS server at {self.nats_server}")
+            
+            # Create JetStream context
+            self.js = self.nats_client.jetstream()
+            
+            # Check if streams exist, don't try to create them if they do
+            try:
+                # Look up streams first
+                streams = []
+                try:
+                    streams = await self.js.streams_info()
+                except Exception as e:
+                    logger.warning(f"Failed to get streams info: {str(e)}")
+
+                # Get stream names
+                stream_names = [stream.config.name for stream in streams]
+                
+                # Only create NOTIFICATIONS stream if it doesn't already exist
+                if "NOTIFICATIONS" not in stream_names:
+                    await self.js.add_stream(
+                        name="NOTIFICATIONS", 
+                        subjects=["notification_requests"]
+                    )
+                    logger.info("Created NOTIFICATIONS stream")
+                else:
+                    logger.info("NOTIFICATIONS stream already exists")
+                
+                # Only create AGENT_TASKS stream if it doesn't already exist
+                if "AGENT_TASKS" not in stream_names:
+                    await self.js.add_stream(
+                        name="AGENT_TASKS", 
+                        subjects=["notification_agent"]
+                    )
+                    logger.info("Created AGENT_TASKS stream")
+                else:
+                    logger.info("AGENT_TASKS stream already exists")
+                
+                # Only create RESPONSES stream if it doesn't already exist
+                if "RESPONSES" not in stream_names:
+                    await self.js.add_stream(
+                        name="RESPONSES", 
+                        subjects=["orchestrator_response"]
+                    )
+                    logger.info("Created RESPONSES stream")
+                else:
+                    logger.info("RESPONSES stream already exists")
+                
+            except nats.errors.Error as e:
+                # Print error but don't raise - we can still work with existing streams
+                logger.warning(f"Stream setup error: {str(e)}")
+        
+        except Exception as e:
+            logger.error(f"Failed to connect to NATS: {str(e)}")
+            raise
     
     def _get_current_timestamp(self):
         """Get current timestamp in ISO format"""
@@ -194,4 +244,4 @@ class NotificationAgent:
         
         # Keep the connection alive
         while True:
-            await nats.aio.asyncio.sleep(3600)  # Sleep for an hour, or until interrupted
+            await asyncio.sleep(3600)  # Sleep for an hour, or until interrupted

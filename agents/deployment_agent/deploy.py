@@ -6,8 +6,8 @@ import nats
 from nats.js.api import ConsumerConfig, DeliverPolicy
 from datetime import datetime
 from crewai import Agent, Task, Crew
-from crewai.tasks import TaskOutput
 from langchain_openai import ChatOpenAI
+from langchain.tools import BaseTool, StructuredTool, tool
 from dotenv import load_dotenv
 from common.tools.deployment_tools import (
     GitChangeTool,
@@ -42,9 +42,39 @@ class DeploymentAgent:
         self.llm = ChatOpenAI(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
         
         # Initialize deployment tools
-        self.git_tool = GitChangeTool(repo_path=self.git_repo_path)
-        self.argocd_tool = ArgoCDTool(server=self.argocd_server)
+        # GitChangeTool doesn't accept constructor parameters, it takes them in execute()
+        self.git_tool = GitChangeTool()
+        
+        # Make sure ArgoCD tool has proper configuration
+        try:
+            # Fix: Use argocd_server parameter name instead of server
+            self.argocd_tool = ArgoCDTool(argocd_server=self.argocd_server)
+        except ValueError as e:
+            logger.warning(f"Failed to initialize ArgoCD tool: {str(e)}")
+            logger.warning("ArgoCD analysis will be disabled")
+            # Still create the tool to avoid exceptions, but expect errors in usage
+            self.argocd_tool = ArgoCDTool(argocd_server=self.argocd_server, api_token="dummy-token")
+            
         self.kube_tool = KubeDeploymentTool()
+        
+        # Convert functions to proper LangChain tools
+        self.langchain_tools = [
+            StructuredTool.from_function(
+                self.git_tool_wrapper,
+                name="git_changes",
+                description="Check recent changes in a Git repository"
+            ),
+            StructuredTool.from_function(
+                self.argocd_tool.execute,
+                name="argocd_history",
+                description="Check ArgoCD application deployment history"
+            ),
+            StructuredTool.from_function(
+                self.kube_tool.execute,
+                name="kube_deployment",
+                description="Check Kubernetes deployment status and revision history"
+            )
+        ]
         
         # Create a crewAI agent for deployment analysis
         self.deployment_analyzer = Agent(
@@ -53,41 +83,77 @@ class DeploymentAgent:
             backstory="You are an expert at analyzing deployment configurations, git changes, and ArgoCD state to identify issues with deployments.",
             verbose=True,
             llm=self.llm,
-            tools=[
-                self.git_tool.execute, 
-                self.argocd_tool.execute,
-                self.kube_tool.execute
-            ]
+            tools=self.langchain_tools
         )
+    
+    def git_tool_wrapper(self, branch="main", since=None, author=None, max_commits=10):
+        """
+        Get recent commits from a Git repository
+        
+        Args:
+            branch (str, optional): Branch to check (default: main)
+            since (str, optional): Get commits since this time (e.g., "1 day ago", "2.weeks", "yesterday")
+            author (str, optional): Filter commits by author
+            max_commits (int, optional): Maximum number of commits to retrieve
+            
+        Returns:
+            dict: Recent commit information
+        """
+        return self.git_tool.execute(repo_path=self.git_repo_path, 
+                                     branch=branch, 
+                                     since=since, 
+                                     author=author, 
+                                     max_commits=max_commits)
     
     async def connect(self):
         """Connect to NATS server and set up JetStream"""
-        # Connect to NATS server
-        self.nats_client = await nats.connect(self.nats_server)
-        logger.info(f"Connected to NATS server at {self.nats_server}")
-        
-        # Create JetStream context
-        self.js = self.nats_client.jetstream()
-        
-        # Ensure streams exist
         try:
-            # Create stream for agent tasks
-            await self.js.add_stream(
-                name="AGENT_TASKS", 
-                subjects=["deployment_agent"]
-            )
-            logger.info("Created or confirmed AGENT_TASKS stream")
+            # Connect to NATS server
+            self.nats_client = await nats.connect(self.nats_server)
+            logger.info(f"Connected to NATS server at {self.nats_server}")
             
-            # Create stream for responses
-            await self.js.add_stream(
-                name="RESPONSES", 
-                subjects=["orchestrator_response"]
-            )
-            logger.info("Created or confirmed RESPONSES stream")
+            # Create JetStream context
+            self.js = self.nats_client.jetstream()
             
-        except nats.errors.Error as e:
-            # Stream might already exist
-            logger.info(f"Stream setup: {str(e)}")
+            # Check if streams exist, don't try to create them if they do
+            try:
+                # Look up streams first
+                streams = []
+                try:
+                    streams = await self.js.streams_info()
+                except Exception as e:
+                    logger.warning(f"Failed to get streams info: {str(e)}")
+
+                # Get stream names
+                stream_names = [stream.config.name for stream in streams]
+                
+                # Only create AGENT_TASKS stream if it doesn't already exist
+                if "AGENT_TASKS" not in stream_names:
+                    await self.js.add_stream(
+                        name="AGENT_TASKS", 
+                        subjects=["deployment_agent"]
+                    )
+                    logger.info("Created AGENT_TASKS stream")
+                else:
+                    logger.info("AGENT_TASKS stream already exists")
+                
+                # Only create RESPONSES stream if it doesn't already exist
+                if "RESPONSES" not in stream_names:
+                    await self.js.add_stream(
+                        name="RESPONSES", 
+                        subjects=["orchestrator_response"]
+                    )
+                    logger.info("Created RESPONSES stream")
+                else:
+                    logger.info("RESPONSES stream already exists")
+                
+            except nats.errors.Error as e:
+                # Print error but don't raise - we can still work with existing streams
+                logger.warning(f"Stream setup error: {str(e)}")
+        
+        except Exception as e:
+            logger.error(f"Failed to connect to NATS: {str(e)}")
+            raise
     
     def _determine_observed_issue(self, alert, deployment_data):
         """Determine the type of deployment issue observed based on the alert and deployment data"""

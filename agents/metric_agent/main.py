@@ -1,7 +1,13 @@
 import asyncio
-from agent import MetricAgent
 import os
+import sys
 from dotenv import load_dotenv
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+# Using explicit import with the full path to the agent module
+from agents.metric_agent.agent import MetricAgent
 
 def main():
     # Load environment variables
@@ -9,7 +15,7 @@ def main():
 
     # Initialize the metric agent with Prometheus URL and NATS server from env vars or use defaults
     prometheus_url = os.environ.get("PROMETHEUS_URL", "http://prometheus:9090")
-    nats_server = os.environ.get("NATS_URL", "nats://nats:4222")
+    nats_server = os.environ.get("NATS_URL", "nats://localhost:4222")  # Use localhost for local testing
     
     agent = MetricAgent(prometheus_url=prometheus_url, nats_server=nats_server)
     

@@ -1,7 +1,12 @@
 import asyncio
-from deploy import DeploymentAgent
 import os
+import sys
 from dotenv import load_dotenv
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from agents.deployment_agent.deploy import DeploymentAgent
 
 def main():
     # Load environment variables
@@ -10,7 +15,7 @@ def main():
     # Initialize the deployment agent with configuration from env vars or use defaults
     argocd_server = os.environ.get("ARGOCD_SERVER", "https://argocd-server.argocd:443")
     git_repo_path = os.environ.get("GIT_REPO_PATH", "/app/repo")
-    nats_server = os.environ.get("NATS_URL", "nats://nats:4222")
+    nats_server = os.environ.get("NATS_URL", "nats://localhost:4222")  # Use localhost for local testing
     
     agent = DeploymentAgent(
         argocd_server=argocd_server,
