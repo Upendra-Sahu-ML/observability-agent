@@ -1,1 +1,3 @@
-# Common module for shared functionality across agents
+"""
+Common utilities and tools for the observability agent.
+"""
