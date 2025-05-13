@@ -15,6 +15,14 @@
       rx: 10;
       ry: 10;
     }
+    .agent-group {
+      fill: rgba(224, 242, 254, 0.3);
+      stroke: #0288d1;
+      stroke-width: 2;
+      stroke-dasharray: 5,3;
+      rx: 15;
+      ry: 15;
+    }
     .db-box {
       fill: #e8f5e9;
       stroke: #388e3c;
@@ -35,6 +43,14 @@
       stroke-width: 2;
       rx: 10;
       ry: 10;
+    }
+    .notification-group {
+      fill: rgba(243, 229, 245, 0.3);
+      stroke: #7b1fa2;
+      stroke-width: 2;
+      stroke-dasharray: 5,3;
+      rx: 15;
+      ry: 15;
     }
     .label {
       font-family: Arial, sans-serif;
@@ -79,6 +95,12 @@
   <!-- Title -->
   <text x="600" y="40" class="title">Observability Agent System Architecture</text>
 
+  <!-- Agent Group Box (added first so it's behind the agents) -->
+  <rect x="75" y="390" width="725" height="220" class="agent-group" />
+  
+  <!-- Notification Channels Group Box -->
+  <rect x="830" y="420" width="260" height="150" class="notification-group" />
+
   <!-- External Systems -->
   <rect x="50" y="100" width="200" height="80" class="box" />
   <text x="150" y="140" class="label">Monitoring Systems</text>
@@ -91,7 +113,7 @@
   <rect x="500" y="250" width="200" height="80" class="messaging-box" />
   <text x="600" y="290" class="label">NATS with JetStream</text>
 
-  <!-- Specialized Agents Section -->
+  <!-- Specialized Agents Section Label -->
   <text x="380" y="410" class="section-label">Specialized Agents</text>
   
   <!-- Agent Boxes - First Row -->
@@ -125,19 +147,19 @@
   <text x="1000" y="290" class="label">Qdrant Vector DB</text>
 
   <!-- Notification Channels Section -->
-  <text x="1000" y="410" class="section-label">Notification Channels</text>
+  <text x="960" y="440" class="section-label">Notification Channels</text>
   
   <!-- Notification Boxes -->
-  <rect x="850" y="440" width="100" height="50" class="notification-box" />
-  <text x="900" y="465" class="label">Slack</text>
+  <rect x="850" y="465" width="100" height="40" class="notification-box" />
+  <text x="900" y="485" class="label">Slack</text>
   
-  <rect x="970" y="440" width="100" height="50" class="notification-box" />
-  <text x="1020" y="465" class="label">PagerDuty</text>
+  <rect x="970" y="465" width="100" height="40" class="notification-box" />
+  <text x="1020" y="485" class="label">PagerDuty</text>
   
-  <rect x="850" y="510" width="100" height="50" class="notification-box" />
+  <rect x="850" y="515" width="100" height="40" class="notification-box" />
   <text x="900" y="535" class="label">Webex</text>
   
-  <rect x="970" y="510" width="100" height="50" class="notification-box" />
+  <rect x="970" y="515" width="100" height="40" class="notification-box" />
   <text x="1020" y="535" class="label">Email</text>
 
   <!-- Arrows -->
@@ -147,22 +169,32 @@
   <!-- Orchestrator to NATS -->
   <path d="M 600 180 L 600 240" class="bidirectional" />
   
-  <!-- NATS to Agents (general connection) -->
-  <path d="M 500 290 L 380 390 L 380 430" class="bidirectional" />
+  <!-- NATS to Agent Group (single arrow) -->
+  <path d="M 600 330 L 600 380" class="bidirectional" />
   
-  <!-- Orchestrator to Knowledge Base -->
-  <path d="M 700 140 L 1000 140 L 1000 240" class="bidirectional" />
+  <!-- Orchestrator to Knowledge Base - Curved path -->
+  <path d="M 700 140 C 800 140, 900 140, 1000 140 L 1000 240" class="bidirectional" />
   
-  <!-- Notification Agent to Notification Channels -->
-  <path d="M 600 520 L 800 520 L 800 480 L 840 480" class="arrow" />
+  <!-- Notification Agent to Notification Channels Group (path goes BELOW all agents) -->
+  <path d="M 525 580 L 525 610 L 780 610 L 780 500 L 830 500" class="arrow" />
   
-  <!-- Connection between NATS and Knowledge Base -->
-  <path d="M 700 290 L 890 290" class="bidirectional" />
+  <!-- Connection between NATS and Knowledge Base - Smoother curve -->
+  <path d="M 700 290 C 750 290, 850 290, 900 290" class="bidirectional" />
 
   <!-- Data Flow Labels -->
   <text x="370" y="120" class="label" style="font-size: 14px;">Alerts</text>
   <text x="620" y="220" class="label" style="font-size: 14px;">Messages</text>
   <text x="800" y="270" class="label" style="font-size: 14px;">Data Storage</text>
-  <text x="800" y="460" class="label" style="font-size: 14px;">Notifications</text>
-  <text x="440" y="360" class="label" style="font-size: 14px;">Distribute Tasks</text>
+  <text x="780" y="475" class="label" style="font-size: 14px;">Notifications</text>
+  <text x="600" y="360" class="label" style="font-size: 14px;">Distribute Tasks</text>
+
+  <!-- Legend -->
+  <rect x="50" y="650" width="240" height="120" fill="#f5f5f5" stroke="#333" stroke-width="1" rx="5" ry="5" />
+  <text x="170" y="670" class="label" style="font-weight: bold;">Legend</text>
+  
+  <line x1="70" y1="690" x2="120" y2="690" class="arrow" />
+  <text x="180" y="690" class="label" style="font-size: 14px; text-anchor: start;">One-way communication</text>
+  
+  <line x1="70" y1="720" x2="120" y2="720" class="bidirectional" />
+  <text x="180" y="720" class="label" style="font-size: 14px; text-anchor: start;">Two-way communication</text>
 </svg>
