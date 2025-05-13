@@ -23,47 +23,35 @@ spec:
       {{- end }}
       containers:
         - name: orchestrator
-          image: "{{ .Values.global.imageRegistry }}{{ .Values.orchestrator.image.repository }}:{{ .Values.orchestrator.image.tag }}"
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          image: "{{ .Values.orchestrator.image.repository }}:{{ .Values.orchestrator.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           env:
-            - name: REDIS_HOST
-              value: {{ include "observability-agent.redisHost" . | quote }}
-            - name: REDIS_PORT
-              value: {{ include "observability-agent.redisPort" . | quote }}
             - name: OPENAI_API_KEY
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: {{ include "observability-agent.fullname" . }}-openai
-                  key: OPENAI_API_KEY
+                  key: api_key
             - name: OPENAI_MODEL
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "observability-agent.fullname" . }}-openai
-                  key: OPENAI_MODEL
-            # Agent enablement configuration
-            - name: ENABLE_METRIC_AGENT
-              value: {{ .Values.agents.enabled.metric | quote }}
-            - name: ENABLE_LOG_AGENT
-              value: {{ .Values.agents.enabled.log | quote }}
-            - name: ENABLE_DEPLOYMENT_AGENT
-              value: {{ .Values.agents.enabled.deployment | quote }}
-            - name: ENABLE_TRACING_AGENT
-              value: {{ .Values.agents.enabled.tracing | quote }}
-            - name: ENABLE_ROOT_CAUSE_AGENT
-              value: {{ .Values.agents.enabled.rootCause | quote }}
-            - name: ENABLE_RUNBOOK_AGENT
-              value: {{ .Values.agents.enabled.runbook | quote }}
-            - name: ENABLE_NOTIFICATION_AGENT
-              value: {{ .Values.agents.enabled.notification | quote }}
-            - name: ENABLE_POSTMORTEM_AGENT
-              value: {{ .Values.agents.enabled.postmortem | quote }}
-            # Knowledge base configuration
-            - name: QDRANT_URL
-              value: {{ if .Values.qdrant.external.enabled }}{{ .Values.qdrant.external.url | quote }}{{ else }}"http://{{ include "observability-agent.fullname" . }}-qdrant:{{ .Values.qdrant.service.port }}"{{ end }}
-            - name: POSTMORTEM_TEMPLATE_DIR
-              value: {{ .Values.knowledgeBase.postmortemTemplateDir | quote }}
-            - name: RUNBOOK_DIR
-              value: {{ .Values.knowledgeBase.runbookDir | quote }}
+              value: {{ .Values.openai.model | default "gpt-4" | quote }}
+            - name: NATS_URL
+              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
+            # Add environment variables to specify which agents are available
+            - name: METRIC_AGENT_ENABLED
+              value: "{{ .Values.agents.enabled.metric }}"
+            - name: LOG_AGENT_ENABLED
+              value: "{{ .Values.agents.enabled.log }}"
+            - name: DEPLOYMENT_AGENT_ENABLED
+              value: "{{ .Values.agents.enabled.deployment }}"
+            - name: TRACING_AGENT_ENABLED
+              value: "{{ .Values.agents.enabled.tracing }}"
+            - name: ROOT_CAUSE_AGENT_ENABLED
+              value: "{{ .Values.agents.enabled.rootCause }}"
+            - name: RUNBOOK_AGENT_ENABLED
+              value: "{{ .Values.agents.enabled.runbook }}"
+            - name: NOTIFICATION_AGENT_ENABLED
+              value: "{{ .Values.agents.enabled.notification }}"
+            - name: POSTMORTEM_AGENT_ENABLED
+              value: "{{ .Values.agents.enabled.postmortem }}"
             {{- range .Values.agents.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}
@@ -72,5 +60,9 @@ spec:
             - name: {{ .name }}
               value: {{ .value | quote }}
             {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
           resources:
             {{- toYaml .Values.orchestrator.resources | nindent 12 }}

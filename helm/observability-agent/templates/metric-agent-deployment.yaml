@@ -24,25 +24,20 @@ spec:
       {{- end }}
       containers:
         - name: metric-agent
-          image: "{{ .Values.global.imageRegistry }}{{ .Values.metricAgent.image.repository }}:{{ .Values.metricAgent.image.tag }}"
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          image: "{{ .Values.metricAgent.image.repository }}:{{ .Values.metricAgent.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           env:
-            - name: REDIS_HOST
-              value: {{ include "observability-agent.redisHost" . | quote }}
-            - name: REDIS_PORT
-              value: {{ include "observability-agent.redisPort" . | quote }}
-            - name: PROMETHEUS_URL
-              value: {{ .Values.metricAgent.prometheus.url | quote }}
             - name: OPENAI_API_KEY
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: {{ include "observability-agent.fullname" . }}-openai
-                  key: OPENAI_API_KEY
+                  key: api_key
             - name: OPENAI_MODEL
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "observability-agent.fullname" . }}-openai
-                  key: OPENAI_MODEL
+              value: {{ .Values.openai.model | default "gpt-4" | quote }}
+            - name: PROMETHEUS_URL
+              value: {{ .Values.metricAgent.prometheus.url | default "http://prometheus-server.monitoring:9090" | quote }}
+            - name: NATS_URL
+              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
             {{- range .Values.agents.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

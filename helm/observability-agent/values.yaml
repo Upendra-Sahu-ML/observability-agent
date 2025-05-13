@@ -6,7 +6,7 @@ global:
   # Image registry and repository prefix for all images
   imageRegistry: ""
   # Pull policy for all images
-  imagePullPolicy: IfNotPresent
+  imagePullPolicy: "IfNotPresent"
   # Image pull secrets for private registries
   imagePullSecrets: []
 
@@ -17,32 +17,46 @@ openai:
   # Model to use (default: gpt-4)
   model: "gpt-4"
 
-# Redis configuration
-redis:
-  # Whether to deploy Redis as part of this chart
+# NATS service configuration
+nats:
   enabled: true
-  # Use external Redis instance
-  external:
-    enabled: false
-    host: redis
-    port: 6379
-  # Redis image configuration
+  image:
+    repository: nats
+    tag: "2.10-alpine"
+    pullPolicy: IfNotPresent
+  jetstream:
+    # Enable JetStream file storage (recommended for production)
+    enabled: true
+  persistence:
+    # Persistence settings for NATS
+    enabled: true
+    # Storage size for NATS persistence
+    size: 1Gi
+    # Alternatively, use memory storage (faster but non-persistent)
+    # memStorage: 1G
+    storageClass: ""  # Use default storage class
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Redis configuration (disabled by default as we're now using NATS)
+redis:
+  enabled: false
   image:
     repository: redis
-    tag: 7
-  # Redis resource requests and limits
+    tag: "7.0-alpine"
+    pullPolicy: IfNotPresent
   resources:
-    requests:
-      memory: "128Mi"
-      cpu: "100m"
     limits:
-      memory: "256Mi"
-      cpu: "200m"
-  # Redis persistence settings
-  persistence:
-    enabled: false
-    size: 1Gi
-    storageClass: ""
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
 
 # Qdrant configuration
 qdrant:
@@ -55,7 +69,7 @@ qdrant:
   # Qdrant image configuration
   image:
     repository: qdrant/qdrant
-    tag: v1.7.4
+    tag: "v1.5.0"
   # Qdrant resource requests and limits
   resources:
     requests:
@@ -67,7 +81,7 @@ qdrant:
   # Qdrant persistence settings
   persistence:
     enabled: true
-    size: 10Gi
+    size: 1Gi
     storageClass: ""
   # Qdrant service configuration
   service:

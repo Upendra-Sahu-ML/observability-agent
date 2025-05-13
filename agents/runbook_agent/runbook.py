@@ -1,7 +1,10 @@
 import os
-import redis
 import json
 import logging
+import asyncio
+import nats
+from nats.js.api import ConsumerConfig, DeliverPolicy
+from datetime import datetime
 from crewai import Agent, Task, Crew
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
@@ -14,202 +17,225 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class RunbookAgent:
-    def __init__(self, redis_host=None, redis_port=None, openai_model=None):
-        # Get configuration from environment variables or use defaults
-        self.redis_host = redis_host or os.environ.get('REDIS_HOST', 'redis')
-        self.redis_port = redis_port or int(os.environ.get('REDIS_PORT', 6379))
-        self.openai_model = openai_model or os.environ.get('OPENAI_MODEL', 'gpt-4')
+    def __init__(self, nats_server="nats://nats:4222"):
+        # NATS connection parameters
+        self.nats_server = nats_server
+        self.nats_client = None
+        self.js = None  # JetStream context
         
-        # Initialize Redis client
-        self.redis_client = redis.Redis(host=self.redis_host, port=self.redis_port)
-        logger.info(f"Initialized Redis connection to {self.redis_host}:{self.redis_port}")
+        # OpenAI API key from environment
+        self.openai_api_key = os.environ.get("OPENAI_API_KEY")
+        if not self.openai_api_key:
+            logger.warning("OPENAI_API_KEY environment variable not set")
+        
+        # Get runbook directory from environment
+        self.runbook_dir = os.environ.get("RUNBOOK_DIR", "/app/runbooks")
         
         # Initialize OpenAI model
-        self.llm = ChatOpenAI(model=self.openai_model)
-        logger.info(f"Initialized OpenAI model: {self.openai_model}")
+        self.llm = ChatOpenAI(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
         
-        # Initialize runbook fetch tool
-        self.runbook_fetch_tool = RunbookFetchTool()
+        # Initialize runbook tools
+        self.runbook_tool = RunbookFetchTool(runbook_dir=self.runbook_dir)
         
-        # Create a crewAI agent for runbook enhancement
-        self.runbook_enhancer = Agent(
-            role="Runbook Enhancement Specialist",
-            goal="Validate and enhance runbooks with root cause analysis to provide accurate remediation steps",
-            backstory="Expert at understanding system issues and translating complex root cause findings into practical remediation steps. You're skilled at validating existing runbooks and filling in any gaps based on the actual incident cause.",
+        # Create a crewAI agent for runbook management
+        self.runbook_manager = Agent(
+            role="Runbook Manager",
+            goal="Provide the most relevant runbook procedures based on incident data",
+            backstory="You are an expert at managing runbooks and selecting the most appropriate remediation steps for incidents.",
             verbose=True,
-            llm=self.llm
+            llm=self.llm,
+            tools=[self.runbook_tool.fetch]
         )
     
-    def fetch_runbook(self, alert_data):
-        """Fetch the runbook for a given alert using the runbook fetch tool"""
+    async def connect(self):
+        """Connect to NATS server and set up JetStream"""
+        # Connect to NATS server
+        self.nats_client = await nats.connect(self.nats_server)
+        logger.info(f"Connected to NATS server at {self.nats_server}")
+        
+        # Create JetStream context
+        self.js = self.nats_client.jetstream()
+        
+        # Ensure streams exist
         try:
-            # Use the runbook fetch tool to get runbooks from different sources
-            runbook_data = self.runbook_fetch_tool.fetch(alert_data)
+            # Create streams for root cause results
+            await self.js.add_stream(
+                name="ROOT_CAUSE_RESULTS", 
+                subjects=["root_cause_result"]
+            )
+            logger.info("Created ROOT_CAUSE_RESULTS stream")
             
-            if runbook_data.get("found", False):
-                logger.info(f"[RunbookAgent] Successfully fetched runbook for alert: {runbook_data.get('alertName')} from {runbook_data.get('source', 'unknown source')}")
-            else:
-                logger.warning(f"[RunbookAgent] No runbook found for alert: {alert_data.get('labels', {}).get('alertname', 'unknown')}")
-                
-            return runbook_data
-                
-        except Exception as e:
-            logger.error(f"[RunbookAgent] Exception fetching runbook: {str(e)}")
-            return {
-                "alertName": alert_data.get('labels', {}).get('alertname', 'unknown'),
-                "steps": [],
-                "found": False,
-                "message": f"Exception fetching runbook: {str(e)}"
-            }
-    
-    def enhance_runbook(self, root_cause_data, runbook_data, alert_data):
-        """Enhance the runbook using root cause analysis and LLM reasoning"""
-        
-        # Extract the root cause analysis
-        root_cause_analysis = root_cause_data.get('root_cause', 'No root cause analysis available')
-        
-        # Get runbook steps
-        runbook_steps = runbook_data.get('steps', [])
-        runbook_found = runbook_data.get('found', False)
-        runbook_source = runbook_data.get('source', 'Unknown source')
-        
-        # Format the steps for the prompt
-        formatted_steps = "\n".join([f"Step {i+1}: {step}" for i, step in enumerate(runbook_steps)])
-        if not formatted_steps:
-            formatted_steps = "No predefined steps available."
-        
-        # Extract alert information for context
-        alert_name = alert_data.get('labels', {}).get('alertname', 'Unknown Alert')
-        service = alert_data.get('labels', {}).get('service', '')
-        namespace = alert_data.get('labels', {}).get('namespace', 'default')
-        summary = alert_data.get('annotations', {}).get('summary', '')
-        description = alert_data.get('annotations', {}).get('description', '')
-        
-        # Create enhancement task
-        enhancement_task = Task(
-            description=f"""
-            Evaluate and enhance the runbook for a system alert based on root cause analysis.
+            # Create streams for alert data requests
+            await self.js.add_stream(
+                name="ALERT_DATA", 
+                subjects=["alert_data_request", "alert_data_response.*"]
+            )
+            logger.info("Created ALERT_DATA stream")
             
-            ALERT INFORMATION:
-            Alert Name: {alert_name}
-            Service: {service}
-            Namespace: {namespace}
-            Summary: {summary}
-            Description: {description}
-            
-            EXISTING RUNBOOK:
-            Source: {runbook_source}
-            {formatted_steps}
-            Runbook Found: {runbook_found}
-            
-            ROOT CAUSE ANALYSIS:
-            {root_cause_analysis}
-            
-            Your task:
-            1. Evaluate whether the existing runbook steps (if any) are appropriate for addressing the identified root cause
-            2. Identify any missing steps, incorrect steps, or steps that need modification
-            3. Provide a complete, enhanced runbook with clear, actionable steps to resolve the issue
-            4. Each step should be concise yet detailed enough for an operator to execute
-            5. Include verification steps to confirm the issue has been resolved
-            6. If the existing runbook is completely appropriate, state so and explain why
-            
-            Format your output as a numbered list of steps, followed by a brief explanation of your changes.
-            """,
-            agent=self.runbook_enhancer,
-            expected_output="A comprehensive, enhanced runbook with actionable steps to resolve the alert, based on the root cause analysis"
-        )
-        
-        # Create crew with the runbook enhancer agent
-        crew = Crew(
-            agents=[self.runbook_enhancer],
-            tasks=[enhancement_task],
-            verbose=True
-        )
-        
-        # Execute the crew workflow
-        result = crew.kickoff()
-        return result
-
-    def listen(self):
-        """Listen for root cause results and generate enhanced runbooks"""
-        logger.info("[RunbookAgent] Starting to listen for root cause results on 'root_cause_result' channel")
-        
-        try:
-            pubsub = self.redis_client.pubsub()
-            pubsub.subscribe("root_cause_result")
-            
-            for message in pubsub.listen():
-                if message['type'] == 'message':
-                    try:
-                        # Parse the incoming message
-                        root_cause_data = json.loads(message['data'])
-                        alert_id = root_cause_data.get("alert_id", "unknown")
-                        logger.info(f"[RunbookAgent] Processing root cause results for alert ID: {alert_id}")
-                        
-                        # We need to fetch the original alert data
-                        # First try to get it from Redis cache
-                        alert_data_str = self.redis_client.get(f"alert:{alert_id}")
-                        
-                        if alert_data_str:
-                            alert_data = json.loads(alert_data_str)
-                        else:
-                            # Request the alert data from the orchestrator if not in cache
-                            self.redis_client.publish("alert_data_request", json.dumps({"alert_id": alert_id}))
-                            logger.info(f"[RunbookAgent] Requested alert data for alert ID: {alert_id}")
-                            
-                            # Wait for the response with a timeout
-                            response_pubsub = self.redis_client.pubsub()
-                            response_pubsub.subscribe(f"alert_data_response:{alert_id}")
-                            
-                            # Wait for up to 10 seconds for a response
-                            import time
-                            start_time = time.time()
-                            alert_data = None
-                            
-                            while time.time() - start_time < 10:
-                                message = response_pubsub.get_message(timeout=1)
-                                if message and message['type'] == 'message':
-                                    alert_data = json.loads(message['data'])
-                                    break
-                                time.sleep(0.1)
-                            
-                            if not alert_data:
-                                logger.error(f"[RunbookAgent] Timed out waiting for alert data for alert ID: {alert_id}")
-                                continue
-                        
-                        # Fetch the runbook for this alert using our new tools
-                        runbook_data = self.fetch_runbook(alert_data)
-                        
-                        # Use crewAI to enhance the runbook using root cause analysis
-                        enhanced_runbook = self.enhance_runbook(root_cause_data, runbook_data, alert_data)
-                        
-                        # Prepare and publish the enhanced runbook
-                        result = {
-                            "agent": "runbook",
-                            "alert_id": alert_id,
-                            "enhanced_runbook": str(enhanced_runbook),
-                            "original_runbook": runbook_data,
-                            "timestamp": self._get_current_timestamp()
-                        }
-                        
-                        self.redis_client.publish("enhanced_runbook", json.dumps(result))
-                        logger.info(f"[RunbookAgent] Published enhanced runbook for alert ID: {alert_id}")
-                    
-                    except json.JSONDecodeError as e:
-                        logger.error(f"[RunbookAgent] Error decoding JSON data: {str(e)}")
-                    except Exception as e:
-                        logger.error(f"[RunbookAgent] Error processing message: {str(e)}", exc_info=True)
-        
-        except redis.RedisError as e:
-            logger.error(f"[RunbookAgent] Redis connection error: {str(e)}")
-            # Wait and attempt to reconnect
-            import time
-            time.sleep(5)
-            logger.info("[RunbookAgent] Attempting to reconnect to Redis...")
-            self.redis_client = redis.Redis(host=self.redis_host, port=self.redis_port)
-            self.listen()  # Recursive call to restart listening
+        except nats.errors.Error as e:
+            # Stream might already exist
+            logger.info(f"Stream setup: {str(e)}")
     
     def _get_current_timestamp(self):
         """Get current timestamp in ISO format"""
-        from datetime import datetime
         return datetime.utcnow().isoformat() + "Z"
+    
+    async def fetch_alert_data(self, alert_id):
+        """Fetch alert data from the orchestrator"""
+        logger.info(f"[RunbookAgent] Requesting alert data for alert ID: {alert_id}")
+        
+        # Request the alert data from the orchestrator
+        request = {"alert_id": alert_id}
+        await self.js.publish("alert_data_request", json.dumps(request).encode())
+        
+        # Create a consumer for the response
+        consumer_config = ConsumerConfig(
+            durable_name=f"runbook_alert_data_{alert_id}",
+            deliver_policy=DeliverPolicy.ALL,
+            ack_policy="explicit",
+            filter_subject=f"alert_data_response.{alert_id}"
+        )
+        
+        # Subscribe to get the response
+        sub = await self.js.subscribe(
+            f"alert_data_response.{alert_id}",
+            config=consumer_config
+        )
+        
+        # Wait for the response with a timeout
+        try:
+            msg = await asyncio.wait_for(sub.next_msg(), timeout=10.0)
+            alert_data = json.loads(msg.data.decode())
+            await msg.ack()
+            await sub.unsubscribe()
+            logger.info(f"[RunbookAgent] Received alert data for alert ID: {alert_id}")
+            return alert_data
+        except asyncio.TimeoutError:
+            logger.warning(f"[RunbookAgent] Timeout waiting for alert data for alert ID: {alert_id}")
+            await sub.unsubscribe()
+            return {"alert_id": alert_id, "error": "Timeout waiting for data"}
+    
+    def _create_runbook_task(self, root_cause_data, alert_data):
+        """Create a runbook generation task for the crew"""
+        alert_id = root_cause_data.get("alert_id", "unknown")
+        root_cause = root_cause_data.get("root_cause", "Unknown root cause")
+        
+        # Extract details from alert data
+        service = alert_data.get("labels", {}).get("service", "unknown")
+        severity = alert_data.get("labels", {}).get("severity", "unknown")
+        description = alert_data.get("annotations", {}).get("description", "No description provided")
+        
+        # Create the task for the runbook manager
+        task = Task(
+            description=f"""
+            Generate runbook instructions for addressing the following incident:
+            
+            ## Alert Information
+            - Alert ID: {alert_id}
+            - Service: {service}
+            - Severity: {severity}
+            - Description: {description}
+            
+            ## Root Cause Analysis
+            {root_cause}
+            
+            Please search for relevant runbooks in our repository and enhance them with specific instructions
+            based on the root cause analysis. If no specific runbook exists, generate appropriate steps.
+            
+            Format your response as a clear, step-by-step guide that an on-call engineer can follow.
+            Include verification steps to confirm that the issue has been resolved.
+            """,
+            agent=self.runbook_manager,
+            expected_output="A comprehensive runbook with step-by-step instructions"
+        )
+        
+        return task
+    
+    async def generate_runbook(self, root_cause_data, alert_data):
+        """Generate an enhanced runbook based on root cause analysis"""
+        logger.info(f"Generating runbook for alert ID: {root_cause_data.get('alert_id', 'unknown')}")
+        
+        # Create runbook task
+        runbook_task = self._create_runbook_task(root_cause_data, alert_data)
+        
+        # Create crew with runbook manager
+        crew = Crew(
+            agents=[self.runbook_manager],
+            tasks=[runbook_task],
+            verbose=True
+        )
+        
+        # Execute crew analysis
+        result = crew.kickoff()
+        
+        return result
+    
+    async def message_handler(self, msg):
+        """Handle incoming NATS messages for root cause results"""
+        try:
+            # Parse the incoming message
+            root_cause_data = json.loads(msg.data.decode())
+            alert_id = root_cause_data.get("alert_id", "unknown")
+            logger.info(f"[RunbookAgent] Processing root cause results for alert ID: {alert_id}")
+            
+            # Fetch the original alert data
+            alert_data = await self.fetch_alert_data(alert_id)
+            
+            if "error" in alert_data:
+                logger.error(f"[RunbookAgent] Failed to get alert data: {alert_data['error']}")
+                # Try to proceed with limited data
+                alert_data = {"alert_id": alert_id}
+            
+            # Generate runbook based on root cause and alert data
+            runbook_result = await self.generate_runbook(root_cause_data, alert_data)
+            
+            # Prepare result for the orchestrator
+            result = {
+                "agent": "runbook",
+                "runbook": str(runbook_result),
+                "alert_id": alert_id,
+                "timestamp": self._get_current_timestamp()
+            }
+            
+            # Publish result to orchestrator
+            await self.js.publish("orchestrator_response", json.dumps(result).encode())
+            logger.info(f"[RunbookAgent] Published runbook for alert ID: {alert_id}")
+            
+            # Acknowledge the message
+            await msg.ack()
+            
+        except Exception as e:
+            logger.error(f"[RunbookAgent] Error processing message: {str(e)}", exc_info=True)
+            # Negative acknowledge the message so it can be redelivered
+            await msg.nak()
+    
+    async def listen(self):
+        """Listen for root cause results and generate enhanced runbooks"""
+        logger.info("[RunbookAgent] Starting to listen for root cause results on 'root_cause_result' channel")
+        
+        # Connect to NATS if not already connected
+        if not self.nats_client or not self.nats_client.is_connected:
+            await self.connect()
+        
+        # Create a durable consumer with a queue group for load balancing
+        consumer_config = ConsumerConfig(
+            durable_name="runbook_agent",
+            deliver_policy=DeliverPolicy.ALL,
+            ack_policy="explicit",
+            max_deliver=5,  # Retry up to 5 times
+            ack_wait=120,   # Wait 2 minutes for acknowledgment (runbook generation can take time)
+        )
+        
+        # Subscribe to the stream with the consumer configuration
+        await self.js.subscribe(
+            "root_cause_result",
+            cb=self.message_handler,
+            queue="runbook_processors",
+            config=consumer_config
+        )
+        
+        logger.info("[RunbookAgent] Subscribed to root_cause_result stream")
+        
+        # Keep the connection alive
+        while True:
+            await asyncio.sleep(3600)  # Sleep for an hour, or until interrupted

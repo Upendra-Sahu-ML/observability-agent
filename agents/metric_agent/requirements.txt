@@ -8,3 +8,13 @@ urllib3>=1.26.0
 # Prometheus specific dependencies
 prometheus-api-client>=0.5.3
 pandas>=1.5.0
+langchain==0.0.267
+openai==0.27.8
+python-dotenv==1.0.0
+requests==2.31.0
+fastapi==0.103.1
+uvicorn==0.23.2
+pydantic==2.3.0
+crewai==0.28.5
+langchain-openai==0.0.2
+nats-py==2.4.0

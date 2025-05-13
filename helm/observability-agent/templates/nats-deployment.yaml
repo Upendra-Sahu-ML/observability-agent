@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-nats
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nats
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "observability-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: nats
+  template:
+    metadata:
+      labels:
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: nats
+    spec:
+      containers:
+        - name: nats
+          image: "{{ .Values.nats.image.repository }}:{{ .Values.nats.image.tag }}"
+          imagePullPolicy: {{ .Values.nats.image.pullPolicy }}
+          args:
+            - "-js"  # Enable JetStream
+            - "-m"
+            - "8222"  # HTTP monitoring port
+            {{- if .Values.nats.jetstream.memStorage }}
+            - "--store"
+            - "memory"
+            - "--mem"
+            - "{{ .Values.nats.jetstream.memStorage }}"
+            {{- end }}
+            {{- if .Values.nats.jetstream.fileStorage }}
+            - "--store"
+            - "file"
+            - "--dir"
+            - "/data"
+            {{- end }}
+          ports:
+            - name: client
+              containerPort: 4222
+              protocol: TCP
+            - name: monitor
+              containerPort: 8222
+              protocol: TCP
+            - name: cluster
+              containerPort: 6222
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: monitor
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: monitor
+            initialDelaySeconds: 5
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.nats.resources | nindent 12 }}
+          {{- if .Values.nats.jetstream.fileStorage }}
+          volumeMounts:
+            - name: data-volume
+              mountPath: /data
+          {{- end }}
+      {{- if .Values.nats.jetstream.fileStorage }}
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: {{ include "observability-agent.fullname" . }}-nats-data
+      {{- end }}

@@ -23,38 +23,31 @@ spec:
       {{- end }}
       containers:
         - name: tracing-agent
-          image: "{{ default .Values.agents.imageRegistry .Values.global.imageRegistry }}{{ .Values.tracingAgent.image.repository }}:{{ .Values.tracingAgent.image.tag }}"
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          image: "{{ .Values.tracingAgent.image.repository }}:{{ .Values.tracingAgent.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           env:
-            - name: REDIS_HOST
-              {{- if .Values.redis.external.enabled }}
-              value: {{ .Values.redis.external.host }}
-              {{- else }}
-              value: {{ include "observability-agent.fullname" . }}-redis
-              {{- end }}
-            - name: REDIS_PORT
-              {{- if .Values.redis.external.enabled }}
-              value: "{{ .Values.redis.external.port }}"
-              {{- else }}
-              value: "6379"
-              {{- end }}
             - name: OPENAI_API_KEY
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: {{ include "observability-agent.fullname" . }}-openai
-                  key: apiKey
+                  key: api_key
             - name: OPENAI_MODEL
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "observability-agent.fullname" . }}-openai
-                  key: model
+              value: {{ .Values.openai.model | default "gpt-4" | quote }}
             - name: TEMPO_URL
-              value: {{ .Values.tracingAgent.tempo.url }}
-            {{- with .Values.agents.env }}
-            {{- toYaml . | nindent 12 }}
+              value: {{ .Values.tracingAgent.tempo.url | default "http://tempo:3100" | quote }}
+            - name: NATS_URL
+              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
+            {{- range .Values.agents.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
             {{- end }}
-            {{- with .Values.tracingAgent.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- range .Values.tracingAgent.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
             {{- end }}
+          ports:
+            - name: http
+              containerPort: 8003
+              protocol: TCP
           resources:
             {{- toYaml .Values.tracingAgent.resources | nindent 12 }}

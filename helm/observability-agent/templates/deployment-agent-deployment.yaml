@@ -23,27 +23,22 @@ spec:
       {{- end }}
       containers:
         - name: deployment-agent
-          image: "{{ .Values.global.imageRegistry }}{{ .Values.deploymentAgent.image.repository }}:{{ .Values.deploymentAgent.image.tag }}"
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          image: "{{ .Values.deploymentAgent.image.repository }}:{{ .Values.deploymentAgent.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           env:
-            - name: REDIS_HOST
-              value: {{ include "observability-agent.redisHost" . | quote }}
-            - name: REDIS_PORT
-              value: {{ include "observability-agent.redisPort" . | quote }}
-            - name: GIT_REPO_PATH
-              value: {{ .Values.deploymentAgent.gitRepoPath | quote }}
-            - name: ARGOCD_SERVER
-              value: {{ .Values.deploymentAgent.argocdServer | quote }}
             - name: OPENAI_API_KEY
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: {{ include "observability-agent.fullname" . }}-openai
-                  key: OPENAI_API_KEY
+                  key: api_key
             - name: OPENAI_MODEL
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "observability-agent.fullname" . }}-openai
-                  key: OPENAI_MODEL
+              value: {{ .Values.openai.model | default "gpt-4" | quote }}
+            - name: ARGOCD_SERVER
+              value: {{ .Values.deploymentAgent.argocd.url | default "https://argocd-server.argocd:443" | quote }}
+            - name: GIT_REPO_PATH
+              value: {{ .Values.deploymentAgent.gitRepoPath | default "/app/repo" | quote }}
+            - name: NATS_URL
+              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
             {{- range .Values.agents.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

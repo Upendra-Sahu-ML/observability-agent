@@ -18,29 +18,14 @@ spec:
         {{- include "observability-agent.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: redis
     spec:
-      {{- with .Values.global.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       containers:
         - name: redis
           image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
           ports:
             - name: redis
               containerPort: 6379
               protocol: TCP
           resources:
             {{- toYaml .Values.redis.resources | nindent 12 }}
-          {{- if .Values.redis.persistence.enabled }}
-          volumeMounts:
-            - name: redis-data
-              mountPath: /data
-          {{- end }}
-      {{- if .Values.redis.persistence.enabled }}
-      volumes:
-        - name: redis-data
-          persistentVolumeClaim:
-            claimName: {{ include "observability-agent.fullname" . }}-redis
-      {{- end }}
 {{- end }}

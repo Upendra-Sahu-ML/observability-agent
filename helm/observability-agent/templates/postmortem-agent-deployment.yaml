@@ -2,55 +2,50 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-postmortem-agent
+  name: {{ include "observability-agent.fullname" . }}-postmortem-agent
   labels:
-    app: {{ .Release.Name }}-postmortem-agent
-    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
-    release: {{ .Release.Name }}
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postmortem-agent
 spec:
   replicas: {{ .Values.postmortemAgent.replicas }}
   selector:
     matchLabels:
-      app: {{ .Release.Name }}-postmortem-agent
+      {{- include "observability-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postmortem-agent
   template:
     metadata:
       labels:
-        app: {{ .Release.Name }}-postmortem-agent
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: postmortem-agent
     spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
-      - name: postmortem-agent
-        image: "{{ .Values.global.image.repository }}:{{ .Values.global.image.tag }}"
-        imagePullPolicy: {{ .Values.global.image.pullPolicy }}
-        command: ["python", "-m", "agents.postmortem_agent.main"]
-        env:
-        - name: REDIS_HOST
-          value: {{ .Values.global.redis.host | quote }}
-        - name: REDIS_PORT
-          value: {{ .Values.global.redis.port | quote }}
-        - name: QDRANT_HOST
-          value: {{ .Values.global.qdrant.host | quote }}
-        - name: QDRANT_PORT
-          value: {{ .Values.global.qdrant.port | quote }}
-        resources:
-          requests:
-            cpu: {{ .Values.postmortemAgent.resources.requests.cpu }}
-            memory: {{ .Values.postmortemAgent.resources.requests.memory }}
-          limits:
-            cpu: {{ .Values.postmortemAgent.resources.limits.cpu }}
-            memory: {{ .Values.postmortemAgent.resources.limits.memory }}
-        ports:
-        - containerPort: 8000
-          name: http
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: http
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: http
-          initialDelaySeconds: 5
-          periodSeconds: 5
-{{- end }} 
+        - name: postmortem-agent
+          image: "{{ .Values.postmortemAgent.image.repository }}:{{ .Values.postmortemAgent.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
+          env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: api_key
+            - name: OPENAI_MODEL
+              value: {{ .Values.openai.model | default "gpt-4" | quote }}
+            - name: TEMPLATE_DIR
+              value: {{ .Values.knowledgeBase.postmortemTemplateDir | default "/app/templates" | quote }}
+            - name: NATS_URL
+              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
+            {{- range .Values.agents.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- range .Values.postmortemAgent.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.postmortemAgent.resources | nindent 12 }}
+{{- end }}
