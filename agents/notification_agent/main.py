@@ -1,20 +1,34 @@
-from notification import NotificationAgent
+import asyncio
 import os
+import sys
 from dotenv import load_dotenv
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from agents.notification_agent.notification import NotificationAgent
 
 def main():
     # Load environment variables
     load_dotenv()
     
     # Initialize the notification agent with env vars or use defaults
-    redis_host = os.environ.get("REDIS_HOST", "redis")
-    redis_port = int(os.environ.get("REDIS_PORT", 6379))
+    nats_server = os.environ.get("NATS_URL", "nats://localhost:4222")  # Use localhost for local testing
     
-    agent = NotificationAgent(redis_host=redis_host, redis_port=redis_port)
+    agent = NotificationAgent(nats_server=nats_server)
     
     print("[NotificationAgent] Starting notification agent...")
-    # Start listening for notification requests
-    agent.listen()
+    
+    # Run the async listen method in the event loop
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(agent.listen())
+    except KeyboardInterrupt:
+        print("[NotificationAgent] Shutting down...")
+    finally:
+        if agent.nats_client and agent.nats_client.is_connected:
+            loop.run_until_complete(agent.nats_client.close())
+        loop.close()
 
 if __name__ == "__main__":
-    main() 
+    main()

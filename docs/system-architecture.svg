@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="800" viewBox="0 0 1200 800">
+  <style>
+    .box {
+      fill: #f5f5f5;
+      stroke: #333;
+      stroke-width: 2;
+      rx: 10;
+      ry: 10;
+    }
+    .agent-box {
+      fill: #e1f5fe;
+      stroke: #0288d1;
+      stroke-width: 2;
+      rx: 10;
+      ry: 10;
+    }
+    .agent-group {
+      fill: rgba(224, 242, 254, 0.3);
+      stroke: #0288d1;
+      stroke-width: 2;
+      stroke-dasharray: 5,3;
+      rx: 15;
+      ry: 15;
+    }
+    .db-box {
+      fill: #e8f5e9;
+      stroke: #388e3c;
+      stroke-width: 2;
+      rx: 10;
+      ry: 10;
+    }
+    .messaging-box {
+      fill: #fff3e0;
+      stroke: #ef6c00;
+      stroke-width: 2;
+      rx: 10;
+      ry: 10;
+    }
+    .notification-box {
+      fill: #f3e5f5;
+      stroke: #7b1fa2;
+      stroke-width: 2;
+      rx: 10;
+      ry: 10;
+    }
+    .notification-group {
+      fill: rgba(243, 229, 245, 0.3);
+      stroke: #7b1fa2;
+      stroke-width: 2;
+      stroke-dasharray: 5,3;
+      rx: 15;
+      ry: 15;
+    }
+    .label {
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+      text-anchor: middle;
+      dominant-baseline: middle;
+    }
+    .section-label {
+      font-family: Arial, sans-serif;
+      font-size: 20px;
+      font-weight: bold;
+      text-anchor: middle;
+    }
+    .arrow {
+      stroke: #666;
+      stroke-width: 2;
+      fill: none;
+      marker-end: url(#arrowhead);
+    }
+    .bidirectional {
+      stroke: #666;
+      stroke-width: 2;
+      fill: none;
+      marker-end: url(#arrowhead);
+      marker-start: url(#arrowhead);
+    }
+    .title {
+      font-family: Arial, sans-serif;
+      font-size: 24px;
+      font-weight: bold;
+      text-anchor: middle;
+    }
+  </style>
+
+  <!-- Arrow Definitions -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#666" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="600" y="40" class="title">Observability Agent System Architecture</text>
+
+  <!-- Agent Group Box (added first so it's behind the agents) -->
+  <rect x="75" y="390" width="725" height="220" class="agent-group" />
+  
+  <!-- Notification Channels Group Box -->
+  <rect x="830" y="420" width="260" height="150" class="notification-group" />
+
+  <!-- External Systems -->
+  <rect x="50" y="100" width="200" height="80" class="box" />
+  <text x="150" y="140" class="label">Monitoring Systems</text>
+
+  <!-- Orchestrator -->
+  <rect x="500" y="100" width="200" height="80" class="box" />
+  <text x="600" y="140" class="label">Orchestrator</text>
+
+  <!-- NATS Messaging -->
+  <rect x="500" y="250" width="200" height="80" class="messaging-box" />
+  <text x="600" y="290" class="label">NATS with JetStream</text>
+
+  <!-- Specialized Agents Section Label -->
+  <text x="380" y="410" class="section-label">Specialized Agents</text>
+  
+  <!-- Agent Boxes - First Row -->
+  <rect x="100" y="440" width="150" height="60" class="agent-box" />
+  <text x="175" y="470" class="label">Metric Agent</text>
+  
+  <rect x="275" y="440" width="150" height="60" class="agent-box" />
+  <text x="350" y="470" class="label">Log Agent</text>
+  
+  <rect x="450" y="440" width="150" height="60" class="agent-box" />
+  <text x="525" y="470" class="label">Deployment Agent</text>
+  
+  <rect x="625" y="440" width="150" height="60" class="agent-box" />
+  <text x="700" y="470" class="label">Tracing Agent</text>
+
+  <!-- Agent Boxes - Second Row -->
+  <rect x="100" y="520" width="150" height="60" class="agent-box" />
+  <text x="175" y="550" class="label">Root Cause Agent</text>
+  
+  <rect x="275" y="520" width="150" height="60" class="agent-box" />
+  <text x="350" y="550" class="label">Runbook Agent</text>
+  
+  <rect x="450" y="520" width="150" height="60" class="agent-box" />
+  <text x="525" y="550" class="label">Notification Agent</text>
+  
+  <rect x="625" y="520" width="150" height="60" class="agent-box" />
+  <text x="700" y="550" class="label">Postmortem Agent</text>
+
+  <!-- Knowledge Base -->
+  <rect x="900" y="250" width="200" height="80" class="db-box" />
+  <text x="1000" y="290" class="label">Qdrant Vector DB</text>
+
+  <!-- Notification Channels Section -->
+  <text x="960" y="440" class="section-label">Notification Channels</text>
+  
+  <!-- Notification Boxes -->
+  <rect x="850" y="465" width="100" height="40" class="notification-box" />
+  <text x="900" y="485" class="label">Slack</text>
+  
+  <rect x="970" y="465" width="100" height="40" class="notification-box" />
+  <text x="1020" y="485" class="label">PagerDuty</text>
+  
+  <rect x="850" y="515" width="100" height="40" class="notification-box" />
+  <text x="900" y="535" class="label">Webex</text>
+  
+  <rect x="970" y="515" width="100" height="40" class="notification-box" />
+  <text x="1020" y="535" class="label">Email</text>
+
+  <!-- Arrows -->
+  <!-- Monitoring to Orchestrator -->
+  <path d="M 250 140 L 490 140" class="arrow" />
+  
+  <!-- Orchestrator to NATS -->
+  <path d="M 600 180 L 600 240" class="bidirectional" />
+  
+  <!-- NATS to Agent Group (single arrow) -->
+  <path d="M 600 330 L 600 380" class="bidirectional" />
+  
+  <!-- Orchestrator to Knowledge Base - Curved path -->
+  <path d="M 700 140 C 800 140, 900 140, 1000 140 L 1000 240" class="bidirectional" />
+  
+  <!-- Notification Agent to Notification Channels Group (path goes BELOW all agents) -->
+  <path d="M 525 580 L 525 610 L 780 610 L 780 500 L 830 500" class="arrow" />
+  
+  <!-- Connection between NATS and Knowledge Base - Smoother curve -->
+  <path d="M 700 290 C 750 290, 850 290, 900 290" class="bidirectional" />
+
+  <!-- Data Flow Labels -->
+  <text x="370" y="120" class="label" style="font-size: 14px;">Alerts</text>
+  <text x="620" y="220" class="label" style="font-size: 14px;">Messages</text>
+  <text x="800" y="270" class="label" style="font-size: 14px;">Data Storage</text>
+  <text x="780" y="475" class="label" style="font-size: 14px;">Notifications</text>
+  <text x="600" y="360" class="label" style="font-size: 14px;">Distribute Tasks</text>
+
+  <!-- Legend -->
+  <rect x="50" y="650" width="240" height="120" fill="#f5f5f5" stroke="#333" stroke-width="1" rx="5" ry="5" />
+  <text x="170" y="670" class="label" style="font-weight: bold;">Legend</text>
+  
+  <line x1="70" y1="690" x2="120" y2="690" class="arrow" />
+  <text x="180" y="690" class="label" style="font-size: 14px; text-anchor: start;">One-way communication</text>
+  
+  <line x1="70" y1="720" x2="120" y2="720" class="bidirectional" />
+  <text x="180" y="720" class="label" style="font-size: 14px; text-anchor: start;">Two-way communication</text>
+</svg>

@@ -23,23 +23,22 @@ spec:
       {{- end }}
       containers:
         - name: runbook-agent
-          image: "{{ .Values.global.imageRegistry }}{{ .Values.runbookAgent.image.repository }}:{{ .Values.runbookAgent.image.tag }}"
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          image: "{{ .Values.runbookAgent.image.repository }}:{{ .Values.runbookAgent.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           env:
-            - name: REDIS_HOST
-              value: {{ include "observability-agent.redisHost" . | quote }}
-            - name: REDIS_PORT
-              value: {{ include "observability-agent.redisPort" . | quote }}
             - name: OPENAI_API_KEY
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: {{ include "observability-agent.fullname" . }}-openai
-                  key: OPENAI_API_KEY
+                  key: api_key
             - name: OPENAI_MODEL
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "observability-agent.fullname" . }}-openai
-                  key: OPENAI_MODEL
+              value: {{ .Values.openai.model | default "gpt-4" | quote }}
+            - name: RUNBOOK_DIR
+              value: {{ .Values.knowledgeBase.runbookDir | default "/app/runbooks" | quote }}
+            - name: QDRANT_URL
+              value: {{ .Values.knowledgeBase.qdrant.url | default (printf "http://%s-qdrant:6333" (include "observability-agent.fullname" .)) | quote }}
+            - name: NATS_URL
+              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
             {{- range .Values.agents.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

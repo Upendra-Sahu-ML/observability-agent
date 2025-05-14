@@ -1,27 +1,34 @@
-from runbook import RunbookAgent
+import asyncio
 import os
+import sys
 from dotenv import load_dotenv
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from agents.runbook_agent.runbook import RunbookAgent
 
 def main():
     # Load environment variables
     load_dotenv()
     
     # Initialize the runbook agent with env vars or use defaults
-    redis_host = os.environ.get("REDIS_HOST", "redis")
-    redis_port = int(os.environ.get("REDIS_PORT", 6379))
-    openai_model = os.environ.get("OPENAI_MODEL", "gpt-4")
-    runbook_base_url = os.environ.get("RUNBOOK_BASE_URL", "http://runbooks-service:8080")
+    nats_server = os.environ.get("NATS_URL", "nats://localhost:4222")  # Use localhost for local testing
     
-    agent = RunbookAgent(
-        redis_host=redis_host,
-        redis_port=redis_port,
-        openai_model=openai_model,
-        runbook_base_url=runbook_base_url
-    )
+    agent = RunbookAgent(nats_server=nats_server)
     
     print("[RunbookAgent] Starting runbook agent...")
-    # Start listening for messages from the root cause agent
-    agent.listen()
+    
+    # Run the async listen method in the event loop
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(agent.listen())
+    except KeyboardInterrupt:
+        print("[RunbookAgent] Shutting down...")
+    finally:
+        if agent.nats_client and agent.nats_client.is_connected:
+            loop.run_until_complete(agent.nats_client.close())
+        loop.close()
 
 if __name__ == "__main__":
     main()

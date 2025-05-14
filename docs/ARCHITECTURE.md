@@ -6,34 +6,48 @@ The Observability Agent System is a distributed, AI-powered observability platfo
 
 ## High-Level Architecture
 
+### Visual Representation
+
+![Observability Agent System Architecture](./system-architecture.svg)
+
+The diagram above shows the key components of the system and their interactions. For a detailed explanation, see the sections below.
+
 ```mermaid
-graph TD
+flowchart TD
     A[Monitoring Systems] -->|Alerts| B[Orchestrator]
     B -->|Distribute| C[Specialized Agents]
     C -->|Responses| B
     B -->|Store| D[Knowledge Base]
     B -->|Notify| E[Notification Channels]
-    
-    subgraph "Specialized Agents"
-        C1[Metric Agent]
-        C2[Log Agent]
-        C3[Deployment Agent]
-        C4[Tracing Agent]
-        C5[Root Cause Agent]
-        C6[Runbook Agent]
-        C7[Notification Agent]
-        C8[Postmortem Agent]
-    end
-    
-    subgraph "Knowledge Base"
-        D1[Qdrant Vector DB]
-    end
-    
-    subgraph "Notification Channels"
-        E1[Slack]
-        E2[PagerDuty]
-        E3[Webex]
-    end
+
+subgraph "Specialized Agents"
+    C1[Metric Agent]
+    C2[Log Agent]
+    C3[Deployment Agent]
+    C4[Tracing Agent]
+    C5[Root Cause Agent]
+    C6[Runbook Agent]
+    C7[Notification Agent]
+    C8[Postmortem Agent]
+end
+
+subgraph "Knowledge Base"
+    D1[Qdrant Vector DB]
+end
+
+subgraph "Notification Channels"
+    E1[Slack]
+    E2[PagerDuty]
+    E3[Webex]
+    E4[Email]
+end
+
+subgraph "Communication Layer"
+    F1[NATS with JetStream]
+end
+
+B <-->|Persistent Messaging| F1
+C <-->|Durable Subscriptions| F1
 ```
 
 ## Core Components
@@ -60,27 +74,29 @@ graph TD
 - Historical incident tracking
 - Runbook and postmortem storage
 
-### 4. Communication Layer
-- Redis for pub/sub messaging
-- Inter-agent communication
-- Alert distribution
-- Response collection
+### 4. Communication Layer (NATS)
+- Message streaming with JetStream
+- Persistent, durable message delivery
+- Advanced subject-based routing
+- Queue groups for load balancing
+- Configurable message retention
+- Acknowledgment-based flow control
 
 ## Data Flow
 
 1. **Alert Ingestion**
    ```
-   Monitoring System -> Redis -> Orchestrator
+   Monitoring System -> NATS -> Orchestrator
    ```
 
 2. **Analysis Distribution**
    ```
-   Orchestrator -> Redis -> Specialized Agents
+   Orchestrator -> NATS -> Specialized Agents
    ```
 
 3. **Response Collection**
    ```
-   Specialized Agents -> Redis -> Orchestrator
+   Specialized Agents -> NATS -> Orchestrator
    ```
 
 4. **Knowledge Integration**
@@ -90,7 +106,7 @@ graph TD
 
 5. **Notification Dispatch**
    ```
-   Orchestrator -> Notification Agent -> Channels
+   Orchestrator -> NATS -> Notification Agent -> Channels
    ```
 
 ## Use Cases
@@ -184,7 +200,7 @@ graph TD
     A[Helm Chart] --> B[Orchestrator]
     A --> C[Specialized Agents]
     A --> D[Qdrant]
-    A --> E[Redis]
+    A --> E[NATS]
     
     B -->|Uses| E
     B -->|Uses| D
@@ -207,7 +223,7 @@ graph TD
    - Memory: 256Mi-512Mi
    - Storage: 10Gi-20Gi
 
-4. **Redis**
+4. **NATS**
    - CPU: 100m-200m
    - Memory: 128Mi-256Mi
 
@@ -216,7 +232,7 @@ graph TD
 1. **Authentication**
    - API key management
    - Service account permissions
-   - Redis authentication
+   - NATS authentication
 
 2. **Authorization**
    - Role-based access control
@@ -259,4 +275,4 @@ graph TD
 
 ## Conclusion
 
-The Observability Agent System provides a comprehensive solution for incident detection, analysis, and response. Its distributed architecture and specialized agents enable deep insights into system behavior, while the knowledge base ensures continuous learning and improvement of incident response capabilities. 
+The Observability Agent System provides a comprehensive solution for incident detection, analysis, and response. Its distributed architecture and specialized agents enable deep insights into system behavior, while the knowledge base ensures continuous learning and improvement of incident response capabilities.

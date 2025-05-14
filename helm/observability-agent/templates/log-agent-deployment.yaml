@@ -23,25 +23,20 @@ spec:
       {{- end }}
       containers:
         - name: log-agent
-          image: "{{ .Values.global.imageRegistry }}{{ .Values.logAgent.image.repository }}:{{ .Values.logAgent.image.tag }}"
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          image: "{{ .Values.logAgent.image.repository }}:{{ .Values.logAgent.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           env:
-            - name: REDIS_HOST
-              value: {{ include "observability-agent.redisHost" . | quote }}
-            - name: REDIS_PORT
-              value: {{ include "observability-agent.redisPort" . | quote }}
-            - name: LOKI_URL
-              value: {{ .Values.logAgent.loki.url | quote }}
             - name: OPENAI_API_KEY
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: {{ include "observability-agent.fullname" . }}-openai
-                  key: OPENAI_API_KEY
+                  key: api_key
             - name: OPENAI_MODEL
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "observability-agent.fullname" . }}-openai
-                  key: OPENAI_MODEL
+              value: {{ .Values.openai.model | default "gpt-4" | quote }}
+            - name: LOKI_URL
+              value: {{ .Values.logAgent.loki.url | default "http://loki-gateway.monitoring:3100" | quote }}
+            - name: NATS_URL
+              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
             {{- range .Values.agents.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

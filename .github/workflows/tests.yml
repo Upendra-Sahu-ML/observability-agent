@@ -1,0 +1,52 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov
+        pip install -e .
+        pip install -r requirements.txt
+        
+        # Install agent-specific requirements
+        for dir in agents/*/; do
+          if [ -f "${dir}requirements.txt" ]; then
+            pip install -r "${dir}requirements.txt" || true
+          fi
+        done
+    
+    - name: Test with pytest
+      run: |
+        python -m pytest tests/ -v --cov=common --cov-report=xml --no-header
+      env:
+        # Set mock environment variables for testing
+        SLACK_BOT_TOKEN: test-token
+        WEBEX_ACCESS_TOKEN: test-token
+        PAGERDUTY_API_TOKEN: test-token
+        PAGERDUTY_SERVICE_ID: test-service-id
+        QDRANT_URL: http://localhost:6333
+        POSTMORTEM_TEMPLATE_DIR: /tmp/templates
+        RUNBOOK_DIR: /tmp/runbooks
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false

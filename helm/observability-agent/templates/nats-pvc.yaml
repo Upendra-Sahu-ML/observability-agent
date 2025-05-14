@@ -1,0 +1,18 @@
+{{- if .Values.nats.jetstream.fileStorage }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-nats-data
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nats
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.nats.jetstream.storageSize | default "1Gi" }}
+  {{- if .Values.nats.jetstream.storageClass }}
+  storageClassName: {{ .Values.nats.jetstream.storageClass }}
+  {{- end }}
+{{- end }}
