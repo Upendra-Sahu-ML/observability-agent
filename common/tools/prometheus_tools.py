@@ -3,26 +3,18 @@ Prometheus tools for querying metrics data
 """
 import requests
 import json
+import os
 from datetime import datetime, timedelta
 from urllib.parse import urljoin
-from common.tools.base import AgentTool
 
-class PrometheusQueryTool(AgentTool):
-    """Tool for executing PromQL queries against Prometheus"""
+class PrometheusTools:
+    """Collection of tools for working with Prometheus metrics"""
     
-    def __init__(self, prometheus_url="http://prometheus:9090"):
-        self.base_url = prometheus_url
+    def __init__(self, prometheus_url=None):
+        self.prometheus_url = prometheus_url or os.environ.get('PROMETHEUS_URL', "http://prometheus:9090")
         self.api_path = "/api/v1/"
     
-    @property
-    def name(self):
-        return "prometheus_query"
-    
-    @property
-    def description(self):
-        return "Execute a PromQL instant query against Prometheus"
-    
-    def execute(self, query, time=None):
+    def query(self, query, time=None):
         """
         Execute a PromQL instant query
         
@@ -33,7 +25,7 @@ class PrometheusQueryTool(AgentTool):
         Returns:
             dict: Query results
         """
-        endpoint = urljoin(self.base_url, f"{self.api_path}query")
+        endpoint = urljoin(self.prometheus_url, f"{self.api_path}query")
         params = {"query": query}
         
         if time:
@@ -44,135 +36,12 @@ class PrometheusQueryTool(AgentTool):
         if response.status_code == 200:
             return response.json()
         else:
-            raise Exception(f"Query failed with status {response.status_code}: {response.text}")
-
-    def get_service_health(self, service, namespace):
-        """
-        Get service health metrics
-        
-        Args:
-            service (str): Service name
-            namespace (str): Kubernetes namespace
-            
-        Returns:
-            dict: Service health metrics
-        """
-        metrics = {}
-        
-        # Get request rate
-        rate_query = f'sum(rate(http_requests_total{{service="{service}",namespace="{namespace}"}}[5m]))'
-        rate_result = self.execute(rate_query)
-        metrics["request_rate"] = rate_result.get("data", {}).get("result", [{}])[0].get("value", [None, 0])[1]
-        
-        # Get error rate
-        error_query = f'sum(rate(http_requests_total{{service="{service}",namespace="{namespace}",status=~"5.."}}[5m]))'
-        error_result = self.execute(error_query)
-        metrics["error_rate"] = error_result.get("data", {}).get("result", [{}])[0].get("value", [None, 0])[1]
-        
-        # Get latency
-        latency_query = f'histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{{service="{service}",namespace="{namespace}"}}[5m])) by (le))'
-        latency_result = self.execute(latency_query)
-        metrics["p95_latency"] = latency_result.get("data", {}).get("result", [{}])[0].get("value", [None, 0])[1]
-        
-        # Calculate error rate percentage
-        if metrics["request_rate"] > 0:
-            metrics["error_rate_percent"] = (metrics["error_rate"] / metrics["request_rate"]) * 100
-        else:
-            metrics["error_rate_percent"] = 0
-            
-        return metrics
-
-    def get_resource_usage(self, pod, namespace):
-        """
-        Get pod resource usage metrics
-        
-        Args:
-            pod (str): Pod name
-            namespace (str): Kubernetes namespace
-            
-        Returns:
-            dict: Resource usage metrics
-        """
-        metrics = {}
-        
-        # Get CPU usage
-        cpu_query = f'sum(rate(container_cpu_usage_seconds_total{{pod="{pod}",namespace="{namespace}"}}[5m]))'
-        cpu_result = self.execute(cpu_query)
-        metrics["cpu_usage"] = cpu_result.get("data", {}).get("result", [{}])[0].get("value", [None, 0])[1]
-        
-        # Get memory usage
-        memory_query = f'container_memory_usage_bytes{{pod="{pod}",namespace="{namespace}"}}'
-        memory_result = self.execute(memory_query)
-        metrics["memory_usage"] = memory_result.get("data", {}).get("result", [{}])[0].get("value", [None, 0])[1]
-        
-        # Get memory limit
-        memory_limit_query = f'container_spec_memory_limit_bytes{{pod="{pod}",namespace="{namespace}"}}'
-        memory_limit_result = self.execute(memory_limit_query)
-        memory_limit = memory_limit_result.get("data", {}).get("result", [{}])[0].get("value", [None, 0])[1]
-        
-        # Calculate memory usage percentage
-        if memory_limit > 0:
-            metrics["memory_usage_percent"] = (metrics["memory_usage"] / memory_limit) * 100
-        else:
-            metrics["memory_usage_percent"] = 0
-            
-        return metrics
-
-    def get_service_dependencies(self, service, namespace):
-        """
-        Get service dependency metrics
-        
-        Args:
-            service (str): Service name
-            namespace (str): Kubernetes namespace
-            
-        Returns:
-            dict: Service dependency metrics
-        """
-        metrics = {}
-        
-        # Get upstream service calls
-        upstream_query = f'sum(rate(http_client_requests_total{{service="{service}",namespace="{namespace}"}}[5m])) by (upstream_service)'
-        upstream_result = self.execute(upstream_query)
-        
-        upstream_calls = {}
-        for result in upstream_result.get("data", {}).get("result", []):
-            service_name = result.get("metric", {}).get("upstream_service", "unknown")
-            rate = result.get("value", [None, 0])[1]
-            upstream_calls[service_name] = rate
-            
-        metrics["upstream_calls"] = upstream_calls
-        
-        # Get downstream service calls
-        downstream_query = f'sum(rate(http_server_requests_total{{service="{service}",namespace="{namespace}"}}[5m])) by (downstream_service)'
-        downstream_result = self.execute(downstream_query)
-        
-        downstream_calls = {}
-        for result in downstream_result.get("data", {}).get("result", []):
-            service_name = result.get("metric", {}).get("downstream_service", "unknown")
-            rate = result.get("value", [None, 0])[1]
-            downstream_calls[service_name] = rate
-            
-        metrics["downstream_calls"] = downstream_calls
-        
-        return metrics
-
-class PrometheusRangeQueryTool(AgentTool):
-    """Tool for executing PromQL range queries against Prometheus"""
+            return {
+                "status": "error",
+                "error": f"Query failed with status {response.status_code}: {response.text}"
+            }
     
-    def __init__(self, prometheus_url="http://prometheus:9090"):
-        self.base_url = prometheus_url
-        self.api_path = "/api/v1/"
-    
-    @property
-    def name(self):
-        return "prometheus_range_query"
-    
-    @property
-    def description(self):
-        return "Execute a PromQL range query with start time, end time, and step interval"
-    
-    def execute(self, query, start, end, step):
+    def range_query(self, query, start, end, step):
         """
         Execute a PromQL range query
         
@@ -185,7 +54,7 @@ class PrometheusRangeQueryTool(AgentTool):
         Returns:
             dict: Range query results
         """
-        endpoint = urljoin(self.base_url, f"{self.api_path}query_range")
+        endpoint = urljoin(self.prometheus_url, f"{self.api_path}query_range")
         params = {
             "query": query,
             "start": start,
@@ -198,66 +67,215 @@ class PrometheusRangeQueryTool(AgentTool):
         if response.status_code == 200:
             return response.json()
         else:
-            raise Exception(f"Range query failed with status {response.status_code}: {response.text}")
+            return {
+                "status": "error",
+                "error": f"Range query failed with status {response.status_code}: {response.text}"
+            }
+    
+    def get_service_health(self, service):
+        """
+        Get service health metrics
+        
+        Args:
+            service (str): Service name
             
-class PrometheusMetricsTool(AgentTool):
-    """Tool for listing available metrics in Prometheus"""
+        Returns:
+            dict: Service health metrics
+        """
+        query = f'up{{service="{service}"}}'
+        result = self.query(query)
+        
+        response = {
+            "status": result.get("status", "error")
+        }
+        
+        if result.get("status") == "success":
+            data = result.get("data", {}).get("result", [])
+            if data and float(data[0].get("value", [0, "0"])[1]) > 0:
+                response["health"] = "healthy"
+            else:
+                response["health"] = "unhealthy"
+        else:
+            response["error"] = result.get("error", "Unknown error")
+            
+        return response
     
-    def __init__(self, prometheus_url="http://prometheus:9090"):
-        self.base_url = prometheus_url
-        self.api_path = "/api/v1/"
+    def get_resource_usage(self, service, resource):
+        """
+        Get service resource usage metrics
+        
+        Args:
+            service (str): Service name
+            resource (str): Resource type (cpu, memory)
+            
+        Returns:
+            dict: Resource usage metrics
+        """
+        if resource == "cpu":
+            query = f'sum(rate(container_cpu_usage_seconds_total{{service="{service}"}}[5m]))'
+        elif resource == "memory":
+            query = f'sum(container_memory_usage_bytes{{service="{service}"}}) / 1024 / 1024'
+        else:
+            return {"status": "error", "error": f"Unsupported resource type: {resource}"}
+            
+        result = self.query(query)
+        
+        response = {
+            "status": result.get("status", "error")
+        }
+        
+        if result.get("status") == "success":
+            data = result.get("data", {}).get("result", [])
+            if data:
+                response["usage"] = float(data[0].get("value", [0, "0"])[1])
+            else:
+                response["usage"] = 0
+        else:
+            response["error"] = result.get("error", "Unknown error")
+            
+        return response
     
-    @property
-    def name(self):
-        return "prometheus_list_metrics"
+    def get_service_dependencies(self, service):
+        """
+        Get service dependency metrics
+        
+        Args:
+            service (str): Service name
+            
+        Returns:
+            dict: Service dependency metrics
+        """
+        query = f'count by (destination_service) (service_calls{{source_service="{service}"}})'
+        result = self.query(query)
+        
+        response = {
+            "status": result.get("status", "error")
+        }
+        
+        if result.get("status") == "success":
+            data = result.get("data", {}).get("result", [])
+            dependencies = []
+            
+            for item in data:
+                dependencies.append({
+                    "service": item.get("metric", {}).get("destination_service", "unknown"),
+                    "calls": float(item.get("value", [0, "0"])[1])
+                })
+                
+            response["dependencies"] = dependencies
+        else:
+            response["error"] = result.get("error", "Unknown error")
+            
+        return response
     
-    @property
-    def description(self):
-        return "List all available metrics in Prometheus"
-    
-    def execute(self):
+    def list_metrics(self):
         """
         List all metric names available in Prometheus
         
         Returns:
-            list: List of metric names
+            dict: List of metric names
         """
-        endpoint = urljoin(self.base_url, f"{self.api_path}label/__name__/values")
+        endpoint = urljoin(self.prometheus_url, f"{self.api_path}label/__name__/values")
             
         response = requests.get(endpoint)
         
         if response.status_code == 200:
-            return response.json()["data"]
+            data = response.json()
+            return {
+                "status": "success",
+                "metrics": data.get("data", [])
+            }
         else:
-            raise Exception(f"Failed to list metrics with status {response.status_code}: {response.text}")
-
-class PrometheusTargetsTool(AgentTool):
-    """Tool for getting information about Prometheus scrape targets"""
+            return {
+                "status": "error",
+                "error": f"Failed to list metrics with status {response.status_code}: {response.text}"
+            }
     
-    def __init__(self, prometheus_url="http://prometheus:9090"):
-        self.base_url = prometheus_url
-        self.api_path = "/api/v1/"
+    def get_metric_metadata(self, metric):
+        """
+        Get metadata for a specific metric
+        
+        Args:
+            metric (str): The metric name
+            
+        Returns:
+            dict: Metric metadata
+        """
+        endpoint = urljoin(self.prometheus_url, f"{self.api_path}metadata")
+        params = {}
+        
+        if metric:
+            params["metric"] = metric
+            
+        response = requests.get(endpoint, params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                "status": "success",
+                "metadata": data.get("data", {})
+            }
+        else:
+            return {
+                "status": "error",
+                "error": f"Failed to get metadata with status {response.status_code}: {response.text}"
+            }
     
-    @property
-    def name(self):
-        return "prometheus_targets"
-    
-    @property
-    def description(self):
-        return "Get information about all scrape targets"
-    
-    def execute(self):
+    def list_targets(self, state=None):
         """
         Get all scrape targets and their state
         
-        Returns:
-            dict: Information about active and dropped targets
-        """
-        endpoint = urljoin(self.base_url, f"{self.api_path}targets")
+        Args:
+            state (str, optional): Filter targets by state (active, dropped, any)
             
-        response = requests.get(endpoint)
+        Returns:
+            dict: Information about targets
+        """
+        endpoint = urljoin(self.prometheus_url, f"{self.api_path}targets")
+        params = {}
+        
+        if state and state != "any":
+            params["state"] = state
+            
+        response = requests.get(endpoint, params=params)
         
         if response.status_code == 200:
-            return response.json()["data"]
+            data = response.json()
+            return {
+                "status": "success",
+                "targets": data.get("data", {})
+            }
         else:
-            raise Exception(f"Failed to get targets with status {response.status_code}: {response.text}")
+            return {
+                "status": "error",
+                "error": f"Failed to get targets with status {response.status_code}: {response.text}"
+            }
+    
+    def get_target_health(self, job):
+        """
+        Get health status for targets of a specific job
+        
+        Args:
+            job (str): The job name
+            
+        Returns:
+            dict: Target health information
+        """
+        targets_result = self.list_targets()
+        
+        if targets_result.get("status") != "success":
+            return targets_result
+        
+        active_targets = targets_result.get("targets", {}).get("activeTargets", [])
+        job_targets = [t for t in active_targets if t.get("labels", {}).get("job") == job]
+        
+        healthy = sum(1 for t in job_targets if t.get("health") == "up")
+        total = len(job_targets)
+        
+        return {
+            "status": "success",
+            "job": job,
+            "healthy_targets": healthy,
+            "total_targets": total,
+            "health_percentage": (healthy / total * 100) if total > 0 else 0
+        }

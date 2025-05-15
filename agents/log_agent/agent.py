@@ -6,8 +6,8 @@ import nats
 from nats.js.api import ConsumerConfig, DeliverPolicy
 from datetime import datetime
 from crewai import Agent, Task, Crew
-from langchain_openai import ChatOpenAI
-from langchain.tools import BaseTool, StructuredTool, tool
+from crewai.llm import LLM
+from crewai.tools import tool
 from dotenv import load_dotenv
 from common.tools.log_tools import (
     LokiQueryTool,
@@ -38,32 +38,12 @@ class LogAgent:
             logger.warning("OPENAI_API_KEY environment variable not set")
         
         # Initialize OpenAI model
-        self.llm = ChatOpenAI(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
+        self.llm = LLM(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
         
         # Initialize log tools
         self.loki_tool = LokiQueryTool(loki_url=self.loki_url)
         self.pod_log_tool = PodLogTool()
-        # FileLogTool doesn't accept constructor parameters
         self.file_log_tool = FileLogTool()
-        
-        # Convert functions to proper LangChain tools
-        self.langchain_tools = [
-            StructuredTool.from_function(
-                self.loki_tool.execute,
-                name="loki_query",
-                description="Query logs from Loki using LogQL"
-            ),
-            StructuredTool.from_function(
-                self.pod_log_tool.execute,
-                name="pod_logs",
-                description="Retrieve logs from Kubernetes pods using kubectl"
-            ),
-            StructuredTool.from_function(
-                self.file_log_tool_wrapper,
-                name="file_logs", 
-                description="Retrieve and analyze logs from local files"
-            )
-        ]
         
         # Create a crewAI agent for log analysis
         self.log_analyzer = Agent(
@@ -72,78 +52,24 @@ class LogAgent:
             backstory="You are an expert at analyzing application logs and identifying error patterns that could indicate system issues.",
             verbose=True,
             llm=self.llm,
-            tools=self.langchain_tools
+            tools=[
+                # Loki query tools
+                self.loki_tool.query_logs,
+                self.loki_tool.find_error_patterns,
+                self.loki_tool.get_service_latency,
+                self.loki_tool.get_service_errors,
+                
+                # Kubernetes pod log tools
+                self.pod_log_tool.pod_logs,
+                self.pod_log_tool.get_logs_by_label,
+                self.pod_log_tool.list_pods,
+                
+                # File log tools
+                self.file_log_tool.file_logs,
+                self.file_log_tool.grep_logs,
+                self.file_log_tool.list_log_files
+            ]
         )
-    
-    def file_log_tool_wrapper(self, file_name=None, pattern=None, max_lines=1000, tail=None):
-        """
-        Retrieve and optionally filter logs from local files
-        
-        Args:
-            file_name (str): Name of the log file (will be appended to log_directory)
-            pattern (str, optional): Grep pattern to filter log lines
-            max_lines (int, optional): Maximum number of lines to process
-            tail (int, optional): Get only the last N lines of the file
-            
-        Returns:
-            dict: Filtered log contents or error message
-        """
-        # Construct the full file path by combining log_directory and file_name
-        if not file_name:
-            return {"error": "No file name provided"}
-            
-        file_path = os.path.join(self.log_directory, file_name)
-        return self.file_log_tool.execute(file_path=file_path, pattern=pattern, max_lines=max_lines, tail=tail)
-    
-    async def connect(self):
-        """Connect to NATS server and set up JetStream"""
-        try:
-            # Connect to NATS server
-            self.nats_client = await nats.connect(self.nats_server)
-            logger.info(f"Connected to NATS server at {self.nats_server}")
-            
-            # Create JetStream context
-            self.js = self.nats_client.jetstream()
-            
-            # Check if streams exist, don't try to create them if they do
-            try:
-                # Look up streams first
-                streams = []
-                try:
-                    streams = await self.js.streams_info()
-                except Exception as e:
-                    logger.warning(f"Failed to get streams info: {str(e)}")
-
-                # Get stream names
-                stream_names = [stream.config.name for stream in streams]
-                
-                # Only create AGENT_TASKS stream if it doesn't already exist
-                if "AGENT_TASKS" not in stream_names:
-                    await self.js.add_stream(
-                        name="AGENT_TASKS", 
-                        subjects=["log_agent"]
-                    )
-                    logger.info("Created AGENT_TASKS stream")
-                else:
-                    logger.info("AGENT_TASKS stream already exists")
-                
-                # Only create RESPONSES stream if it doesn't already exist
-                if "RESPONSES" not in stream_names:
-                    await self.js.add_stream(
-                        name="RESPONSES", 
-                        subjects=["orchestrator_response"]
-                    )
-                    logger.info("Created RESPONSES stream")
-                else:
-                    logger.info("RESPONSES stream already exists")
-                
-            except nats.errors.Error as e:
-                # Print error but don't raise - we can still work with existing streams
-                logger.warning(f"Stream setup error: {str(e)}")
-        
-        except Exception as e:
-            logger.error(f"Failed to connect to NATS: {str(e)}")
-            raise
     
     def _determine_observed_issue(self, alert, logs_data, analysis_result):
         """Determine the type of log issue observed based on the analysis"""
@@ -243,6 +169,24 @@ class LogAgent:
         
         return result, logs_data
     
+    async def connect(self):
+        """Establish connection to NATS server and set up JetStream context"""
+        logger.info(f"[LogAgent] Connecting to NATS server: {self.nats_server}")
+        
+        try:
+            # Connect to NATS server
+            self.nats_client = await nats.connect(self.nats_server)
+            logger.info("[LogAgent] Connected to NATS server")
+            
+            # Initialize JetStream context
+            self.js = self.nats_client.jetstream()
+            logger.info("[LogAgent] JetStream context initialized")
+            
+            return True
+        except Exception as e:
+            logger.error(f"[LogAgent] Failed to connect to NATS: {str(e)}", exc_info=True)
+            raise
+    
     async def message_handler(self, msg):
         """Handle incoming NATS messages"""
         try:
@@ -280,32 +224,73 @@ class LogAgent:
             await msg.nak()
     
     async def listen(self):
-        """Listen for alerts from the orchestrator using NATS JetStream"""
+        """
+        Listen for alert messages on the log_agent subject.
+        This method establishes a connection to NATS if not already connected,
+        creates durable consumers, and sets up message handlers.
+        """
         logger.info("[LogAgent] Starting to listen for alerts")
         
-        # Connect to NATS if not already connected
         if not self.nats_client or not self.nats_client.is_connected:
             await self.connect()
         
-        # Create a durable consumer with a queue group for load balancing
-        consumer_config = ConsumerConfig(
-            durable_name="log_agent",
-            deliver_policy=DeliverPolicy.ALL,
-            ack_policy="explicit",
-            max_deliver=5,  # Retry up to 5 times
-            ack_wait=60,    # Wait 60 seconds for acknowledgment
-        )
-        
-        # Subscribe to the stream with the consumer configuration
-        await self.js.subscribe(
-            "log_agent",
-            cb=self.message_handler,
-            queue="log_processors",
-            config=consumer_config
-        )
-        
-        logger.info("[LogAgent] Subscribed to log_agent stream")
-        
-        # Keep the connection alive
-        while True:
-            await asyncio.sleep(3600)  # Sleep for an hour, or until interrupted
+        try:
+            # Ensure the alerts stream exists with proper configuration
+            stream_config = {
+                "name": "ALERTS",
+                "subjects": ["alerts.>"],
+                "retention": "limits",
+                "max_consumers": -1,
+                "max_msgs_per_subject": 10000,
+                "max_msgs": 100000,
+                "max_bytes": 1024 * 1024 * 1024,  # 1GB
+                "discard": "old",
+                "max_age": 86400 * 30,  # 30 days
+                "storage": "file",
+                "num_replicas": 1,
+            }
+            
+            try:
+                # Try to get the stream info first to see if it exists
+                await self.js.stream_info("ALERTS")
+                logger.info("[LogAgent] Connected to existing ALERTS stream")
+            except Exception:
+                # Create the stream if it doesn't exist
+                await self.js.add_stream(**stream_config)
+                logger.info("[LogAgent] Created ALERTS stream with configuration")
+            
+            # Consumer configuration
+            consumer_config = ConsumerConfig(
+                durable_name="log_agent_consumer",
+                deliver_policy=DeliverPolicy.ALL,
+                ack_wait=60,  # 60 seconds
+                max_deliver=10,  # Maximum redelivery attempts
+            )
+            
+            # Create durable consumer for the log agent
+            await self.js.subscribe(
+                "alerts.log",
+                cb=self.message_handler,
+                durable="log_agent_consumer",
+                config=consumer_config,
+                manual_ack=True
+            )
+            
+            logger.info("[LogAgent] Subscribed to alerts.log subject")
+            
+            # Keep the application running
+            while True:
+                await asyncio.sleep(600)  # Sleep for 10 minutes
+                logger.info("[LogAgent] Still listening for alerts")
+                
+        except Exception as e:
+            logger.error(f"[LogAgent] Error while listening: {str(e)}", exc_info=True)
+            # Try to reconnect if there's an issue
+            if self.nats_client and self.nats_client.is_connected:
+                await self.nats_client.close()
+            self.nats_client = None
+            self.js = None
+            # Wait a bit before trying to reconnect
+            await asyncio.sleep(5)
+            # Recursive call to try listening again
+            await self.listen()

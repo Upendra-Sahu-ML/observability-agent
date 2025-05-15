@@ -5,11 +5,11 @@ import asyncio
 import nats
 from nats.js.api import ConsumerConfig, DeliverPolicy
 from datetime import datetime
-import jinja2
 from crewai import Agent, Task, Crew
-from langchain_openai import ChatOpenAI
-from langchain.tools import BaseTool, StructuredTool, tool
+from crewai.llm import LLM
+from crewai.tools import tool
 from dotenv import load_dotenv
+from common.tools.knowledge_tools import PostmortemTemplateTool, PostmortemGeneratorTool, RunbookUpdateTool
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,18 +18,14 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class PostmortemAgent:
-    def __init__(self, template_dir="/app/templates", nats_server="nats://nats:4222"):
+    def __init__(self, template_dir="/templates", nats_server="nats://nats:4222"):
         # NATS connection parameters
         self.nats_server = nats_server
         self.nats_client = None
         self.js = None  # JetStream context
         
-        # Template directory
+        # Template configuration
         self.template_dir = template_dir
-        self.template_env = jinja2.Environment(
-            loader=jinja2.FileSystemLoader(self.template_dir),
-            autoescape=jinja2.select_autoescape(['html', 'xml'])
-        )
         
         # OpenAI API key from environment
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
@@ -37,16 +33,32 @@ class PostmortemAgent:
             logger.warning("OPENAI_API_KEY environment variable not set")
         
         # Initialize OpenAI model
-        self.llm = ChatOpenAI(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
+        self.llm = LLM(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
+        
+        # Initialize postmortem tools
+        self.template_tool = PostmortemTemplateTool(template_dir=self.template_dir)
+        self.generator_tool = PostmortemGeneratorTool()
+        self.runbook_update_tool = RunbookUpdateTool()
         
         # Create a crewAI agent for postmortem generation
-        self.postmortem_writer = Agent(
-            role="Postmortem Writer",
-            goal="Create comprehensive incident postmortem documents",
-            backstory="You are an expert at creating detailed, accurate postmortem documents that help teams learn from incidents.",
+        self.postmortem_generator_agent = Agent(
+            role="Postmortem Generator",
+            goal="Generate comprehensive postmortem documents for incidents",
+            backstory="You are an expert at creating detailed postmortem documents that capture incident details, root causes, and lessons learned.",
             verbose=True,
             llm=self.llm,
-            tools=[] # Pass empty list to avoid the KeyError
+            tools=[
+                # Template tools
+                self.template_tool.get_template,
+                self.template_tool.fill_template,
+                
+                # Generator tool
+                self.generator_tool.generate_postmortem,
+                
+                # Runbook update tools
+                self.runbook_update_tool.update_runbook,
+                self.runbook_update_tool.create_runbook
+            ]
         )
     
     async def connect(self):
@@ -174,7 +186,7 @@ class PostmortemAgent:
             
             Format the document in Markdown format.
             """,
-            agent=self.postmortem_writer,
+            agent=self.postmortem_generator_agent,
             expected_output="A comprehensive incident postmortem document in Markdown format"
         )
         
@@ -189,7 +201,7 @@ class PostmortemAgent:
         
         # Create crew with postmortem writer
         crew = Crew(
-            agents=[self.postmortem_writer],
+            agents=[self.postmortem_generator_agent],
             tasks=[postmortem_task],
             verbose=True
         )

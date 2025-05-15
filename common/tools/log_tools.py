@@ -7,24 +7,21 @@ import requests
 import subprocess
 from datetime import datetime, timedelta
 from urllib.parse import urljoin
-from common.tools.base import AgentTool
+from crewai.tools import tool
 
-class LokiQueryTool(AgentTool):
-    """Tool for querying logs from Loki"""
+# Global variables for configuration
+LOKI_URL = os.environ.get("LOKI_URL", "http://loki:3100")
+LOKI_API_PATH = "/loki/api/v1/"
+
+# Class-based tools needed by log_agent
+class LokiQueryTool:
+    """Tool for querying logs from Loki using LogQL"""
     
-    def __init__(self, loki_url="http://loki:3100"):
-        self.base_url = loki_url
-        self.api_path = "/loki/api/v1/"
-    
-    @property
-    def name(self):
-        return "loki_query"
-    
-    @property
-    def description(self):
-        return "Query logs from Loki using LogQL"
-    
-    def execute(self, query, start=None, end=None, limit=100, direction="backward"):
+    def __init__(self, loki_url=None):
+        self.loki_url = loki_url or LOKI_URL
+        
+    @tool("Query logs from Loki using LogQL")
+    def query_logs(self, query, start=None, end=None, limit=100, direction="backward"):
         """
         Execute a LogQL query against Loki
         
@@ -38,7 +35,7 @@ class LokiQueryTool(AgentTool):
         Returns:
             dict: Query results containing log streams
         """
-        endpoint = urljoin(self.base_url, f"{self.api_path}query_range")
+        endpoint = urljoin(self.loki_url, f"{LOKI_API_PATH}query_range")
         
         # Set default time range if not provided
         if not start:
@@ -62,7 +59,8 @@ class LokiQueryTool(AgentTool):
         else:
             raise Exception(f"Loki query failed with status {response.status_code}: {response.text}")
 
-    def get_error_patterns(self, namespace, service, start=None, end=None, limit=100):
+    @tool("Find error patterns in logs")
+    def find_error_patterns(self, namespace, service, start=None, end=None, limit=100):
         """
         Get common error patterns from logs
         
@@ -77,7 +75,7 @@ class LokiQueryTool(AgentTool):
             dict: Common error patterns and their frequencies
         """
         query = f'{{namespace="{namespace}", service="{service}"}} |~ "(?i)(error|exception|fail|fatal)"'
-        logs = self.execute(query, start, end, limit)
+        logs = self.query_logs(query, start, end, limit)
         
         error_patterns = {}
         for stream in logs.get("result", []):
@@ -95,6 +93,7 @@ class LokiQueryTool(AgentTool):
         
         return error_patterns
 
+    @tool("Calculate service latency from logs")
     def get_service_latency(self, namespace, service, start=None, end=None):
         """
         Calculate service latency from logs
@@ -109,7 +108,7 @@ class LokiQueryTool(AgentTool):
             dict: Latency statistics
         """
         query = f'{{namespace="{namespace}", service="{service}"}} |~ "duration=[0-9]+"'
-        logs = self.execute(query, start, end)
+        logs = self.query_logs(query, start, end)
         
         latencies = []
         for stream in logs.get("result", []):
@@ -132,6 +131,7 @@ class LokiQueryTool(AgentTool):
             "p99": sorted(latencies)[int(len(latencies) * 0.99)]
         }
 
+    @tool("Get service error statistics")
     def get_service_errors(self, namespace, service, start=None, end=None, limit=100):
         """
         Get service error statistics
@@ -148,33 +148,27 @@ class LokiQueryTool(AgentTool):
         """
         # Get total request count
         total_query = f'{{namespace="{namespace}", service="{service}"}}'
-        total_logs = self.execute(total_query, start, end, limit)
+        total_logs = self.query_logs(total_query, start, end, limit)
         total_requests = sum(len(stream.get("values", [])) for stream in total_logs.get("result", []))
         
         # Get error count
         error_query = f'{{namespace="{namespace}", service="{service}"}} |~ "(?i)(error|exception|fail|fatal)"'
-        error_logs = self.execute(error_query, start, end, limit)
+        error_logs = self.query_logs(error_query, start, end, limit)
         error_count = sum(len(stream.get("values", [])) for stream in error_logs.get("result", []))
         
         return {
             "total_requests": total_requests,
             "error_count": error_count,
             "error_rate": error_count / total_requests if total_requests > 0 else 0,
-            "error_patterns": self.get_error_patterns(namespace, service, start, end, limit)
+            "error_patterns": self.find_error_patterns(namespace, service, start, end, limit)
         }
 
-class PodLogTool(AgentTool):
-    """Tool for retrieving Kubernetes pod logs using kubectl"""
+
+class PodLogTool:
+    """Tool for retrieving logs from Kubernetes pods using kubectl"""
     
-    @property
-    def name(self):
-        return "pod_logs"
-    
-    @property
-    def description(self):
-        return "Retrieve logs from Kubernetes pods using kubectl"
-    
-    def execute(self, namespace, pod_name=None, container=None, selector=None, tail=100, previous=False, since=None):
+    @tool("Retrieve logs from Kubernetes pods using kubectl")
+    def pod_logs(self, namespace, pod_name=None, container=None, selector=None, tail=100, previous=False, since=None):
         """
         Retrieve logs from Kubernetes pods
         
@@ -212,32 +206,87 @@ class PodLogTool(AgentTool):
             
         if since:
             cmd.extend(["--since", since])
-            
+        
         try:
-            log_output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            logs = result.stdout
             
-            if pod_name:
-                return {pod_name: log_output}
-            else:
-                # For selector-based logs, we need to parse and organize by pod
-                # This is simplified and might need enhancement based on actual output format
-                return {"logs": log_output}
+            if not logs:
+                return {"message": "No logs found"}
+            
+            # Simple parsing for now, can be improved to better organize logs by pod
+            return {"logs": logs}
+        except subprocess.CalledProcessError as e:
+            return {"error": f"Failed to retrieve logs: {e.stderr}"}
+    
+    @tool("Get logs from pods with a specific label")
+    def get_logs_by_label(self, namespace, label, tail=100, since=None):
+        """
+        Get logs from all pods matching a label selector
+        
+        Args:
+            namespace (str): Kubernetes namespace
+            label (str): Label selector (e.g., "app=nginx")
+            tail (int, optional): Number of lines to retrieve from the end of logs
+            since (str, optional): Only return logs newer than this time (e.g., "1h", "15m")
+            
+        Returns:
+            dict: Pod logs organized by pod name
+        """
+        return self.pod_logs(namespace=namespace, selector=label, tail=tail, since=since)
+    
+    @tool("List pods in a namespace")
+    def list_pods(self, namespace):
+        """
+        List all pods in a namespace
+        
+        Args:
+            namespace (str): Kubernetes namespace
+            
+        Returns:
+            dict: List of pods in the namespace
+        """
+        cmd = ["kubectl", "get", "pods", "-n", namespace, "-o", "json"]
+        
+        try:
+            pod_output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
+            pods_json = json.loads(pod_output)
+            
+            # Extract the relevant pod information
+            pods = []
+            for pod in pods_json.get("items", []):
+                pods.append({
+                    "name": pod.get("metadata", {}).get("name", ""),
+                    "status": pod.get("status", {}).get("phase", ""),
+                    "ready": self._is_pod_ready(pod),
+                    "restarts": self._get_restart_count(pod),
+                    "age": pod.get("metadata", {}).get("creationTimestamp", "")
+                })
+                
+            return {"pods": pods}
                 
         except subprocess.CalledProcessError as e:
             return {"error": str(e), "output": e.output}
 
-class FileLogTool(AgentTool):
+    def _is_pod_ready(self, pod):
+        """Check if a pod is ready based on its conditions"""
+        conditions = pod.get("status", {}).get("conditions", [])
+        for condition in conditions:
+            if condition.get("type") == "Ready":
+                return condition.get("status") == "True"
+        return False
+
+    def _get_restart_count(self, pod):
+        """Get the restart count for a pod"""
+        container_statuses = pod.get("status", {}).get("containerStatuses", [])
+        return sum(status.get("restartCount", 0) for status in container_statuses)
+
+
+class FileLogTool:
     """Tool for retrieving and analyzing logs from local files"""
     
-    @property
-    def name(self):
-        return "file_logs"
-    
-    @property
-    def description(self):
-        return "Retrieve and analyze logs from local files"
-    
-    def execute(self, file_path, pattern=None, max_lines=1000, tail=None):
+    @tool("Retrieve and analyze logs from local files")
+    def file_logs(self, file_path, pattern=None, max_lines=1000, tail=None):
         """
         Retrieve and optionally filter logs from local files
         
@@ -275,6 +324,73 @@ class FileLogTool(AgentTool):
                 return {"filtered_lines": filtered_lines, "count": len(filtered_lines)}
             else:
                 return {"content": log_output, "lines": log_output.count('\n') + 1}
+                
+        except subprocess.CalledProcessError as e:
+            return {"error": str(e), "output": e.output}
+
+    @tool("Search for patterns in log files")
+    def grep_logs(self, file_path, pattern, context_lines=0):
+        """
+        Search for patterns in log files using grep
+        
+        Args:
+            file_path (str): Path to the log file
+            pattern (str): Pattern to search for
+            context_lines (int, optional): Number of context lines to include
+            
+        Returns:
+            dict: Matching lines and their context
+        """
+        if not os.path.exists(file_path):
+            return {"error": f"File not found: {file_path}"}
+            
+        cmd = ["grep"]
+        
+        if context_lines > 0:
+            cmd.extend([f"-C{context_lines}"])
+            
+        cmd.extend([pattern, file_path])
+            
+        try:
+            grep_output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
+            lines = grep_output.splitlines()
+            
+            return {
+                "matches": lines,
+                "count": len(lines)
+            }
+                
+        except subprocess.CalledProcessError as e:
+            if e.returncode == 1:  # grep returns 1 when no matches
+                return {"matches": [], "count": 0}
+            else:
+                return {"error": str(e), "output": e.output}
+
+    @tool("List log files in a directory")
+    def list_log_files(self, directory, pattern="*.log"):
+        """
+        List log files in a directory matching a pattern
+        
+        Args:
+            directory (str): Directory to search in
+            pattern (str, optional): Glob pattern to match files
+            
+        Returns:
+            dict: List of matching log files
+        """
+        if not os.path.exists(directory):
+            return {"error": f"Directory not found: {directory}"}
+            
+        cmd = ["find", directory, "-type", "f", "-name", pattern]
+            
+        try:
+            find_output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
+            files = find_output.splitlines()
+            
+            return {
+                "files": files,
+                "count": len(files)
+            }
                 
         except subprocess.CalledProcessError as e:
             return {"error": str(e), "output": e.output}

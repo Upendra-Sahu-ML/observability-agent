@@ -6,14 +6,10 @@ import nats
 from nats.js.api import ConsumerConfig, DeliverPolicy
 from datetime import datetime
 from crewai import Agent, Task, Crew
-from langchain_openai import ChatOpenAI
-from langchain.tools import BaseTool, StructuredTool, tool
+from crewai.llm import LLM
+from crewai.tools import tool
 from dotenv import load_dotenv
-from common.tools.notification_tools import (
-    SlackNotificationTool,
-    PagerDutyNotificationTool,
-    WebexNotificationTool
-)
+from common.tools.notification_tools import NotificationTools
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,31 +27,28 @@ class NotificationAgent:
         # OpenAI API key from environment
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         if not self.openai_api_key:
-            raise ValueError("OPENAI_API_KEY environment variable not set")
-            
+            logger.warning("OPENAI_API_KEY environment variable not set")
+        
         # Initialize OpenAI model
-        self.llm = ChatOpenAI(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
+        self.llm = LLM(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
         
         # Initialize notification tools
-        self.slack_tool = SlackNotificationTool()
-        self.pagerduty_tool = PagerDutyNotificationTool()
-        self.webex_tool = WebexNotificationTool()
-        
-        # Convert functions to proper LangChain tools
-        self.langchain_tools = [
-            StructuredTool.from_function(self.slack_tool.execute),
-            StructuredTool.from_function(self.pagerduty_tool.execute),
-            StructuredTool.from_function(self.webex_tool.execute)
-        ]
+        self.notification_tools = NotificationTools()
         
         # Create a crewAI agent for notification management
         self.notification_manager = Agent(
             role="Notification Manager",
-            goal="Craft clear, actionable notifications for the appropriate channels",
-            backstory="You are an expert at creating effective alerts that reach the right audience through the most appropriate channels.",
+            goal="Manage and send notifications across different platforms",
+            backstory="You are an expert at managing notifications and ensuring important information reaches the right people through appropriate channels.",
             verbose=True,
             llm=self.llm,
-            tools=self.langchain_tools
+            tools=[
+                # Direct access to notification tools
+                self.notification_tools.send_slack_message,
+                self.notification_tools.send_webex_message,
+                self.notification_tools.create_pagerduty_incident,
+                self.notification_tools.send_multi_channel_notification
+            ]
         )
     
     async def connect(self):

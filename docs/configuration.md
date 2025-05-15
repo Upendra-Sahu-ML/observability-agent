@@ -9,13 +9,12 @@ This document provides detailed information about configuring the observability 
 The following environment variables are used across all agents:
 
 ```bash
-# Redis Configuration
-REDIS_HOST=redis-service
-REDIS_PORT=6379
+# NATS Configuration
+NATS_SERVER=nats://nats:4222
 
 # OpenAI Configuration
 OPENAI_API_KEY=your-api-key
-OPENAI_MODEL=gpt-4-turbo-preview
+OPENAI_MODEL=gpt-4
 ```
 
 ### Notification Agent
@@ -39,11 +38,24 @@ WEBEX_DEFAULT_ROOM_ID=your-room-id
 ```bash
 # Vector Database Configuration
 QDRANT_URL=http://qdrant:6333
-WEAVIATE_URL=http://weaviate:8080
 
 # File System Configuration
 POSTMORTEM_TEMPLATE_DIR=/app/templates
 RUNBOOK_DIR=/app/runbooks
+```
+
+### Metric Agent
+
+```bash
+# Prometheus Configuration
+PROMETHEUS_URL=http://prometheus:9090
+```
+
+### Log Agent
+
+```bash
+# Elasticsearch Configuration
+ELASTICSEARCH_URL=http://elasticsearch:9200
 ```
 
 ## Kubernetes Configuration
@@ -59,13 +71,13 @@ metadata:
   name: observability-config
   namespace: observability
 data:
-  redis_host: "redis-service"
-  redis_port: "6379"
+  nats_server: "nats://nats:4222"
   slack_default_channel: "#incidents"
   pagerduty_service_id: "your-service-id"
   webex_default_room_id: "your-room-id"
   qdrant_url: "http://qdrant:6333"
-  weaviate_url: "http://weaviate:8080"
+  prometheus_url: "http://prometheus:9090"
+  elasticsearch_url: "http://elasticsearch:9200"
 ```
 
 ### Secrets
@@ -76,13 +88,101 @@ Create a Secret for sensitive configuration:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: notification-secrets
+  name: observability-secrets
   namespace: observability
 type: Opaque
 data:
+  openai_api_key: <base64-encoded-key>
   slack_bot_token: <base64-encoded-token>
   pagerduty_api_token: <base64-encoded-token>
   webex_access_token: <base64-encoded-token>
+```
+
+## NATS Configuration
+
+### JetStream Configuration
+
+Configure NATS JetStream for persistent messaging:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nats-js-config
+  namespace: observability
+data:
+  nats.conf: |
+    jetstream {
+      store_dir: /data
+      max_mem: 1G
+      max_file: 10G
+    }
+    
+    # Streams Configuration
+    jetstream {
+      # ALERTS Stream
+      streams {
+        name: ALERTS
+        subjects: ["alert_stream"]
+        retention: limits
+        max_age: 24h
+      }
+      
+      # AGENT_TASKS Stream
+      streams {
+        name: AGENT_TASKS
+        subjects: [
+          "metric_agent", 
+          "log_agent", 
+          "deployment_agent", 
+          "tracing_agent", 
+          "root_cause_agent", 
+          "notification_agent", 
+          "postmortem_agent", 
+          "runbook_agent"
+        ]
+        retention: limits
+        max_msgs: 10000
+      }
+      
+      # RESPONSES Stream
+      streams {
+        name: RESPONSES
+        subjects: ["orchestrator_response"]
+        retention: limits
+        max_msgs: 10000
+      }
+      
+      # NOTIFICATIONS Stream
+      streams {
+        name: NOTIFICATIONS
+        subjects: ["notification_requests"]
+        retention: limits
+        max_msgs: 10000
+      }
+    }
+```
+
+### Durable Consumers
+
+Each agent uses durable consumers to ensure message delivery:
+
+```yaml
+# Example consumer creation in Python
+consumer_config = ConsumerConfig(
+    durable_name="metric_agent",
+    deliver_policy=DeliverPolicy.ALL,
+    ack_policy="explicit",
+    max_deliver=5,  # Retry up to 5 times
+    ack_wait=60,    # Wait 60 seconds for acknowledgment
+)
+
+await js.subscribe(
+    "metric_agent",
+    cb=message_handler,
+    queue="metric_processors",
+    config=consumer_config
+)
 ```
 
 ## Postmortem Templates
@@ -165,7 +265,7 @@ readinessProbe:
 
 ## Resource Requirements
 
-### Notification Agent
+### Orchestrator
 ```yaml
 resources:
   requests:
@@ -176,20 +276,47 @@ resources:
     cpu: "200m"
 ```
 
-### Postmortem Agent
+### Specialized Agents
 ```yaml
 resources:
   requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
     memory: "512Mi"
     cpu: "200m"
+```
+
+### NATS Server
+```yaml
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
   limits:
-    memory: "1Gi"
-    cpu: "500m"
+    memory: "512Mi"
+    cpu: "200m"
 ```
 
 ## Storage
 
-The postmortem agent requires persistent storage for runbooks:
+### NATS JetStream Storage
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nats-js-pvc
+  namespace: observability
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+```
+
+### Postmortem Agent Storage
 
 ```yaml
 apiVersion: v1
@@ -203,4 +330,31 @@ spec:
   resources:
     requests:
       storage: 1Gi
-``` 
+```
+
+## Security Configuration
+
+### NATS Authentication
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nats-auth
+  namespace: observability
+type: Opaque
+data:
+  nats-auth.conf: |
+    accounts {
+      observability {
+        users = [
+          {user: agent, password: $AGENT_PASSWORD}
+        ]
+        exports [
+          {stream: alert_stream}
+          {stream: agent_tasks}
+          {stream: orchestrator_response}
+        ]
+      }
+    }
+```

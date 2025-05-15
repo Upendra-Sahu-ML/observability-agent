@@ -9,7 +9,7 @@ import nats
 from nats.js.api import StreamConfig, ConsumerConfig, DeliverPolicy
 from datetime import datetime, timedelta
 from crewai import Agent, Task, Crew
-from langchain_openai import ChatOpenAI
+from crewai.llm import LLM
 from dotenv import load_dotenv
 from common.config import is_agent_enabled
 
@@ -30,8 +30,8 @@ class OrchestratorAgent:
         self.nats_client = None
         self.js = None
         
-        # Initialize OpenAI model
-        self.llm = ChatOpenAI(model=self.openai_model)
+        # Initialize CrewAI LLM
+        self.llm = LLM(provider="openai", model=self.openai_model)
         logger.info(f"Initialized OpenAI model: {self.openai_model}")
         
         # Create a crewAI agent for orchestration

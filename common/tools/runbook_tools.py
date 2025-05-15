@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 import markdown
 import base64
 from urllib.parse import urlparse
+from crewai.tools import tool
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -444,4 +445,169 @@ class RunbookFetchTool:
             "steps": [],
             "found": False,
             "message": "No runbook found in any configured source"
+        }
+
+class RunbookSearchTool:
+    """Tool for searching for runbooks based on incident details"""
+    
+    def __init__(self, runbook_dir=None):
+        """Initialize the runbook search tool"""
+        self.runbook_dir = runbook_dir or os.environ.get("RUNBOOK_LOCAL_PATH", "/runbooks")
+        self.fetch_tool = RunbookFetchTool()
+        
+    @tool("Search for relevant runbooks based on incident details")
+    def search_runbooks(self, incident_type: str, service: str = None, keywords: list = None, max_results: int = 3):
+        """
+        Search for relevant runbooks based on incident details
+        
+        Args:
+            incident_type (str): Type of incident to search runbooks for
+            service (str, optional): Service related to the incident
+            keywords (list, optional): List of keywords to search for
+            max_results (int, optional): Maximum number of runbooks to return
+            
+        Returns:
+            dict: Search results containing matching runbooks
+        """
+        # Create a mock alert data structure to use with fetch_tool
+        alert_data = {
+            'labels': {
+                'alertname': incident_type,
+                'service': service or ''
+            },
+            'annotations': {
+                'keywords': ','.join(keywords) if keywords else ''
+            }
+        }
+        
+        # Fetch the runbook using the fetch tool
+        result = self.fetch_tool.fetch(alert_data)
+        
+        # If fetch_tool found a runbook, return it as the first result
+        if result.get("found", False):
+            return {
+                "status": "success",
+                "runbooks": [result],
+                "count": 1
+            }
+        
+        # If no runbook was found, return an empty result
+        return {
+            "status": "error",
+            "message": f"No runbooks found for incident type: {incident_type}, service: {service}",
+            "runbooks": [],
+            "count": 0
+        }
+    
+    @tool("Get runbook for a specific service and alert")
+    def get_runbook_by_alert(self, alert_name: str, service: str = None):
+        """
+        Get a specific runbook for a service and alert name
+        
+        Args:
+            alert_name (str): Name of the alert
+            service (str, optional): Service name
+        
+        Returns:
+            dict: Runbook data if found
+        """
+        alert_data = {
+            'labels': {
+                'alertname': alert_name,
+                'service': service or ''
+            }
+        }
+        
+        return self.fetch_tool.fetch(alert_data)
+
+class RunbookExecutionTool:
+    """Tool for executing runbook steps and tracking progress"""
+    
+    @tool("Execute runbook steps and track progress")
+    def execute_runbook(self, runbook_id: str = None, incident_id: str = None, steps: list = None):
+        """
+        Execute runbook steps and track progress
+        
+        Args:
+            runbook_id (str): ID of the runbook to execute
+            incident_id (str): ID of the incident being addressed
+            steps (list, optional): List of steps to execute if not using a standard runbook
+            
+        Returns:
+            dict: Execution results with step status and outcomes
+        """
+        # In a real implementation, this would track execution of steps
+        # For now, we'll just return the steps with mock status
+        
+        if not steps:
+            # If this were a real implementation, we would fetch the steps for the runbook_id
+            steps = ["No steps provided"]
+        
+        execution_results = []
+        for i, step in enumerate(steps):
+            # In a real implementation, we might actually execute commands or track manual execution
+            execution_results.append({
+                "step_number": i + 1,
+                "description": step,
+                "status": "simulated",
+                "outcome": "This is a simulated execution. In a real environment, this would track actual execution status."
+            })
+        
+        return {
+            "runbook_id": runbook_id or "custom",
+            "incident_id": incident_id,
+            "execution_id": f"exec-{incident_id}-{runbook_id}" if runbook_id and incident_id else "exec-custom",
+            "status": "completed",
+            "steps_executed": len(execution_results),
+            "results": execution_results
+        }
+    
+    @tool("Track runbook execution status")
+    def track_execution(self, execution_id: str):
+        """
+        Track the status of a runbook execution
+        
+        Args:
+            execution_id (str): ID of the execution to track
+            
+        Returns:
+            dict: Current status of the runbook execution
+        """
+        # In a real implementation, this would retrieve the status from a database
+        return {
+            "execution_id": execution_id,
+            "status": "completed",  # Example status
+            "steps_completed": 5,   # Example number
+            "steps_total": 5,      # Example number
+            "progress": 100,       # Example percentage
+            "last_updated": datetime.now().isoformat()
+        }
+    
+    @tool("Generate custom runbook")
+    def generate_custom_runbook(self, incident_type: str, service: str, root_cause: str):
+        """
+        Generate a custom runbook based on incident details and root cause
+        
+        Args:
+            incident_type (str): Type of incident
+            service (str): Name of the affected service
+            root_cause (str): Description of the root cause
+            
+        Returns:
+            dict: Custom runbook data
+        """
+        # In a real implementation, this might use a template system or an LLM to generate steps
+        # For now, return a simple example
+        return {
+            "alertName": incident_type,
+            "service": service,
+            "steps": [
+                f"1. Verify the {service} service is experiencing issues related to {incident_type}",
+                f"2. Check the root cause: {root_cause}",
+                f"3. Restart the {service} service if necessary",
+                "4. Verify the service is operating correctly",
+                "5. Document the incident resolution"
+            ],
+            "found": True,
+            "source": "Generated custom runbook"
         }
