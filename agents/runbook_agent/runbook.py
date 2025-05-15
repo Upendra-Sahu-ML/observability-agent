@@ -73,8 +73,7 @@ class RunbookAgent:
             
             # Check if we can get the stream info, this confirms the connection works
             try:
-                # Just check if we can access streams - we don't need to create them
-                # since they're likely already created by the orchestrator or other agents
+                # Check existing streams
                 streams = await self.js.streams_info()
                 logger.info(f"Successfully connected to JetStream. Found {len(streams)} streams.")
                 
@@ -84,8 +83,55 @@ class RunbookAgent:
                     stream_details[stream.config.name] = stream.config.subjects
                 logger.info(f"Existing streams: {stream_details}")
                 
-                # We'll skip stream creation entirely since other agents have likely created them
-                # This avoids the 'subjects overlap with an existing stream' error
+                # Check if RESPONSES stream exists and contains the root_cause_result subject
+                responses_stream_exists = False
+                has_root_cause_result = False
+                
+                for stream in streams:
+                    if stream.config.name == "RESPONSES":
+                        responses_stream_exists = True
+                        if "root_cause_result" in stream.config.subjects:
+                            has_root_cause_result = True
+                            logger.info("RESPONSES stream includes root_cause_result subject")
+                            break
+                
+                # If RESPONSES stream exists but doesn't have root_cause_result subject, add it
+                if responses_stream_exists and not has_root_cause_result:
+                    try:
+                        # Get the current config
+                        stream_info = await self.js.stream_info("RESPONSES")
+                        current_config = stream_info.config
+                        
+                        # Add the root_cause_result subject and update the stream
+                        new_subjects = current_config.subjects + ["root_cause_result"]
+                        current_config.subjects = new_subjects
+                        
+                        # Update the stream with new subjects
+                        await self.js.update_stream(config=current_config)
+                        logger.info("Updated RESPONSES stream to include root_cause_result subject")
+                    except Exception as e:
+                        logger.error(f"Error updating RESPONSES stream: {str(e)}")
+                
+                # If RESPONSES stream doesn't exist, we need to create it
+                if not responses_stream_exists:
+                    try:
+                        from nats.js.api import StreamConfig
+                        # Create RESPONSES stream with root_cause_result subject
+                        responses_config = StreamConfig(
+                            name="RESPONSES",
+                            subjects=["orchestrator_response", "root_cause_result"],
+                            retention="limits",
+                            max_msgs=10000,
+                            max_bytes=1024*1024*100,  # 100MB
+                            max_age=3600*24*7,  # 7 days
+                            storage="memory",
+                            discard="old"
+                        )
+                        
+                        await self.js.add_stream(config=responses_config)
+                        logger.info("Created RESPONSES stream with orchestrator_response and root_cause_result subjects")
+                    except Exception as e:
+                        logger.error(f"Error creating RESPONSES stream: {str(e)}")
                 
             except nats.errors.Error as e:
                 # Just log the error but continue - we can still work with the connection
