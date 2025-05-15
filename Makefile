@@ -22,7 +22,10 @@ PLATFORM ?= linux/amd64
 # List of components to build
 COMPONENTS = orchestrator metric-agent log-agent deployment-agent root-cause-agent runbook-agent tracing-agent notification-agent postmortem-agent
 
-.PHONY: all build push deploy clean help $(COMPONENTS)
+# Additional tools
+TOOLS = alert-publisher
+
+.PHONY: all build push deploy clean help $(COMPONENTS) $(TOOLS)
 
 # Default target
 all: build
@@ -119,6 +122,10 @@ notification-agent:
 
 postmortem-agent:
 	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-postmortem-agent:$(TAG) -f agents/postmortem_agent/Dockerfile .
+
+# Tool targets
+alert-publisher:
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/alert-publisher:$(TAG) -f scripts/Dockerfile.alert-publisher scripts/
 
 run:
 	$(COMPOSE_CMD) up --build

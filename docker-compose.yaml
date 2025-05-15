@@ -1,27 +1,88 @@
 # File: docker-compose.yaml
 version: '3.9'
 services:
+  nats:
+    image: nats:latest
+    ports:
+      - "4222:4222"  # Client connections
+      - "8222:8222"  # HTTP monitoring
+    command: "--jetstream --js_domain observability-agent"
+    volumes:
+      - nats-data:/data
+    environment:
+      - NATS_SERVER_NAME=observability-agent-nats
+
   orchestrator:
     build: ./orchestrator
     depends_on:
-      - redis
+      - nats
+    environment:
+      - NATS_URL=nats://nats:4222
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+
   metric_agent:
     build: ./agents/metric_agent
     depends_on:
-      - redis
+      - nats
+    environment:
+      - NATS_URL=nats://nats:4222
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+
   log_agent:
     build: ./agents/log_agent
     depends_on:
-      - redis
+      - nats
+    environment:
+      - NATS_URL=nats://nats:4222
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+
   deployment_agent:
     build: ./agents/deployment_agent
     depends_on:
-      - redis
-  redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
+      - nats
+    environment:
+      - NATS_URL=nats://nats:4222
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+
   root_cause_agent:
     build: ./agents/root_cause_agent
     depends_on:
-      - redis
+      - nats
+    environment:
+      - NATS_URL=nats://nats:4222
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+
+  tracing_agent:
+    build: ./agents/tracing_agent
+    depends_on:
+      - nats
+    environment:
+      - NATS_URL=nats://nats:4222
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+
+  notification_agent:
+    build: ./agents/notification_agent
+    depends_on:
+      - nats
+    environment:
+      - NATS_URL=nats://nats:4222
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+
+  postmortem_agent:
+    build: ./agents/postmortem_agent
+    depends_on:
+      - nats
+    environment:
+      - NATS_URL=nats://nats:4222
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+
+volumes:
+  nats-data:

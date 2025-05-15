@@ -13,7 +13,7 @@ global:
 # OpenAI API settings
 openai:
   # API key for OpenAI (required)
-  apiKey: "OPENAI_API_KEY"
+  apiKey: "YOUR_OPENAI_API_KEY"
   # Model to use (default: gpt-4)
   model: "gpt-4o-mini"
 
@@ -29,11 +29,11 @@ nats:
     enabled: true
   persistence:
     # Persistence settings for NATS
-    enabled: true
+    enabled: false  # Disabled for local development - change to true for production
     # Storage size for NATS persistence
     size: 1Gi
     # Alternatively, use memory storage (faster but non-persistent)
-    # memStorage: 1G
+    memStorage: 1G
     storageClass: ""  # Use default storage class
   resources:
     limits:

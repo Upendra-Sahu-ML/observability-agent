@@ -477,7 +477,7 @@ class TempoTools:
                     span_service = span.get("attributes", {}).get("service.name", "unknown")
                     if span_service != service:
                         continue
-                        
+                    
                     # Track errors by operation
                     operation = span.get("name", "unknown")
                     if operation not in errors["error_operations"]:
@@ -498,99 +498,94 @@ class TempoTools:
         
         return errors
 
-    @tool("Analyze service performance using Tempo distributed tracing data")
+    @tool("Analyze comprehensive service performance")
     def analyze_service_performance(self, service, start=None, end=None, limit=100):
         """
-        Analyze service performance using Tempo
+        Perform a comprehensive analysis of service performance
         
         Args:
             service (str): Service name to analyze
-            start (str, optional): Start time in ISO format (e.g., "2023-01-01T00:00:00Z")
-            end (str, optional): End time in ISO format (e.g., "2023-01-01T01:00:00Z")
+            start (str, optional): Start time in ISO format
+            end (str, optional): End time in ISO format
             limit (int, optional): Maximum number of traces to analyze
             
         Returns:
-            dict: Service performance analysis
+            dict: Comprehensive service performance analysis
         """
-        # Set time range
-        if not start:
-            # Default to last hour if not specified
-            start_time = datetime.utcnow() - timedelta(hours=1)
-            start = start_time.isoformat() + "Z"
-            
-        if not end:
-            end_time = datetime.utcnow()
-            end = end_time.isoformat() + "Z"
+        # Get basic trace data
+        traces_data = self.query_traces(service=service, start=start, end=end, limit=limit)
         
-        # Get traces for the service
-        traces = self.query_traces(service=service, start=start, end=end, limit=limit)
+        # Get latency analysis
+        latency_data = self.get_service_latency_analysis(service=service, start=start, end=end, limit=limit)
         
-        # Initialize result structure
+        # Get error analysis
+        error_data = self.get_error_analysis(service=service, start=start, end=end, limit=limit)
+        
+        # Get dependency analysis
+        dependency_data = self.get_service_dependencies(service=service, start=start, end=end, limit=limit)
+        
+        # Combine all data into a comprehensive analysis
         result = {
             "service": service,
+            "trace_count": traces_data.get("trace_count", 0),
             "time_range": {
                 "start": start,
                 "end": end
-            },
-            "trace_count": traces.get("trace_count", 0),
-            "operations": {},
-            "error_count": 0,
-            "avg_duration_ms": 0,
-            "p95_duration_ms": 0,
-            "max_duration_ms": 0,
-            "issues": []
+            }
         }
         
-        # Extract duration statistics from the traces
-        if traces.get("statistics"):
-            result["avg_duration_ms"] = traces["statistics"].get("avg_duration_ms", 0)
-            result["p95_duration_ms"] = traces["statistics"].get("p95_duration_ms", 0)
-            result["max_duration_ms"] = traces["statistics"].get("max_duration_ms", 0)
+        # Add performance metrics
+        if "statistics" in traces_data:
+            result["avg_duration_ms"] = traces_data["statistics"].get("avg_duration_ms", 0)
+            result["p95_duration_ms"] = traces_data["statistics"].get("p95_duration_ms", 0)
+            result["p99_duration_ms"] = traces_data["statistics"].get("p99_duration_ms", 0)
+            result["max_duration_ms"] = traces_data["statistics"].get("max_duration_ms", 0)
         
-        # Get error analysis
-        error_analysis = self.get_error_analysis(service, start, end, limit)
-        result["error_count"] = error_analysis.get("total_error_traces", 0)
-        result["error_rate"] = error_analysis.get("error_rate", 0)
+        # Add error information
+        result["error_count"] = error_data.get("total_error_traces", 0)
+        result["error_rate"] = error_data.get("error_rate", 0)
+        result["error_messages"] = error_data.get("error_messages", {})
         
-        # Extract most common error messages
-        if error_analysis.get("error_messages"):
-            sorted_errors = sorted(error_analysis["error_messages"].items(), key=lambda x: x[1], reverse=True)
-            for message, count in sorted_errors[:5]:  # Top 5 error messages
+        # Add operation-specific performance
+        result["operations"] = latency_data.get("operations", {})
+        
+        # Add dependency information
+        result["dependencies"] = dependency_data
+        
+        # Identify potential issues
+        result["issues"] = []
+        
+        # Check for high error rate
+        if result["error_rate"] > 0.05:  # 5% error rate threshold
+            result["issues"].append({
+                "type": "high_error_rate",
+                "message": f"High error rate of {result['error_rate']*100:.1f}%",
+                "severity": "high"
+            })
+        
+        # Check for slow operations
+        for op_name, op_data in result["operations"].items():
+            if op_data.get("avg", 0) > 500:  # 500ms threshold
                 result["issues"].append({
-                    "type": "error",
-                    "message": message,
-                    "count": count,
-                    "operation": "various"  # We'd need to dig deeper to associate with specific operations
+                    "type": "slow_operation",
+                    "operation": op_name,
+                    "avg_duration": op_data["avg"],
+                    "message": f"Slow operation {op_name} with average duration {op_data['avg']}ms",
+                    "severity": "medium"
                 })
         
-        # Get latency analysis for operations
-        latency_analysis = self.get_service_latency_analysis(service, start, end, limit)
-        if "operations" in latency_analysis:
-            # Copy operation statistics
-            for op_name, op_stats in latency_analysis["operations"].items():
-                result["operations"][op_name] = op_stats
-                
-                # Flag slow operations (p95 > 500ms as an example threshold)
-                if op_stats.get("p95", 0) > 500:
+        # Check for problematic dependencies
+        for dep_type in ["upstream", "downstream"]:
+            for dep_name, dep_data in result["dependencies"].get(dep_type, {}).items():
+                error_rate = dep_data.get("errors", 0) / dep_data.get("count", 1)
+                if error_rate > 0.05:  # 5% error rate threshold
                     result["issues"].append({
-                        "type": "slow_operation",
-                        "operation": op_name,
-                        "p95_duration_ms": op_stats.get("p95", 0),
-                        "count": op_stats.get("count", 0)
+                        "type": "dependency_errors",
+                        "dependency_type": dep_type,
+                        "dependency": dep_name,
+                        "error_rate": error_rate,
+                        "message": f"{dep_type.capitalize()} dependency {dep_name} has {error_rate*100:.1f}% error rate",
+                        "severity": "high"
                     })
-        
-        # Get dependency analysis
-        dependency_analysis = self.get_service_dependencies(service, start, end, limit)
-        result["dependencies"] = dependency_analysis
-        
-        # Flag problematic dependencies (high error rate)
-        for dep_name, dep_stats in dependency_analysis.get("downstream", {}).items():
-            if dep_stats.get("count", 0) > 0 and dep_stats.get("errors", 0) / dep_stats["count"] > 0.1:
-                result["issues"].append({
-                    "type": "dependency_error",
-                    "dependency": dep_name,
-                    "error_rate": dep_stats.get("errors", 0) / dep_stats.get("count", 1),
-                    "count": dep_stats.get("count", 0)
-                })
         
         return result

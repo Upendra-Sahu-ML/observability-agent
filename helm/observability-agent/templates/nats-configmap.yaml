@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-nats-config
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nats
+data:
+  nats.conf: |
+    # Basic NATS configuration
+    http_port: 8222
+    
+    # JetStream configuration
+    {{- if .Values.nats.jetstream.enabled }}
+    jetstream {
+      domain: observability-agent
+      {{- if .Values.nats.persistence.enabled }}
+      # File-based storage
+      store_dir: /data
+      {{- else }}
+      # Memory-based storage
+      max_mem: {{ .Values.nats.persistence.memStorage | default "1G" }}
+      {{- end }}
+    }
+    {{- end }}
+    
+  js-streams.json: |
+    {
+      "streams": [
+        {
+          "name": "ALERTS",
+          "subjects": ["alerts", "alerts.*"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "AGENT_TASKS",
+          "subjects": ["metric_agent", "log_agent", "deployment_agent", "tracing_agent", "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "RESPONSES",
+          "subjects": ["orchestrator_response", "root_cause_result"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "ALERT_DATA",
+          "subjects": ["alert_data_request", "alert_data_response.*"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "ROOT_CAUSE",
+          "subjects": ["root_cause_analysis", "root_cause_result"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "NOTIFICATIONS",
+          "subjects": ["notification_requests"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        }
+      ]
+    }

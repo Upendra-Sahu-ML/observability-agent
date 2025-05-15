@@ -22,21 +22,8 @@ spec:
           image: "{{ .Values.nats.image.repository }}:{{ .Values.nats.image.tag }}"
           imagePullPolicy: {{ .Values.nats.image.pullPolicy }}
           args:
-            - "-js"  # Enable JetStream
-            - "-m"
-            - "8222"  # HTTP monitoring port
-            {{- if .Values.nats.jetstream.memStorage }}
-            - "--store"
-            - "memory"
-            - "--mem"
-            - "{{ .Values.nats.jetstream.memStorage }}"
-            {{- end }}
-            {{- if .Values.nats.jetstream.fileStorage }}
-            - "--store"
-            - "file"
-            - "--dir"
-            - "/data"
-            {{- end }}
+            - "-c"
+            - "/etc/nats-config/nats.conf"
           ports:
             - name: client
               containerPort: 4222
@@ -61,14 +48,19 @@ spec:
             timeoutSeconds: 3
           resources:
             {{- toYaml .Values.nats.resources | nindent 12 }}
-          {{- if .Values.nats.jetstream.fileStorage }}
           volumeMounts:
+            {{- if and .Values.nats.jetstream.enabled .Values.nats.persistence.enabled }}
             - name: data-volume
               mountPath: /data
-          {{- end }}
-      {{- if .Values.nats.jetstream.fileStorage }}
+            {{- end }}
+            - name: nats-config-volume
+              mountPath: /etc/nats-config
       volumes:
+        {{- if and .Values.nats.jetstream.enabled .Values.nats.persistence.enabled }}
         - name: data-volume
           persistentVolumeClaim:
             claimName: {{ include "observability-agent.fullname" . }}-nats-data
-      {{- end }}
+        {{- end }}
+        - name: nats-config-volume
+          configMap:
+            name: {{ include "observability-agent.fullname" . }}-nats-config

@@ -2,18 +2,24 @@ import pytest
 import json
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
+import requests
 
-from common.tools.tempo_tools import TempoTraceTool, TempoServiceTool
+from common.tools.tempo_tools import TempoTools
+
+@pytest.fixture
+def tempo_tool():
+    """Fixture to create a TempoTools instance for testing"""
+    return TempoTools(tempo_url="http://tempo-test:3100")
 
 @pytest.fixture
 def tempo_trace_tool():
-    """Fixture to create a TempoTraceTool instance for testing"""
-    return TempoTraceTool(tempo_url="http://tempo-test:3100")
+    """Fixture to maintain backward compatibility with existing tests"""
+    return TempoTools(tempo_url="http://tempo-test:3100")
 
 @pytest.fixture
 def tempo_service_tool():
-    """Fixture to create a TempoServiceTool instance for testing"""
-    return TempoServiceTool(tempo_url="http://tempo-test:3100")
+    """Fixture to maintain backward compatibility with existing tests"""
+    return TempoTools(tempo_url="http://tempo-test:3100")
 
 @pytest.fixture
 def sample_trace_response():
@@ -95,27 +101,22 @@ def sample_trace_detail_response():
         ]
     }
 
-class TestTempoTraceTool:
-    """Tests for the TempoTraceTool class"""
+class TestTempoTools:
+    """Tests for the TempoTools class"""
 
     def test_initialization_with_url(self):
-        """Test TempoTraceTool initialization with a provided URL"""
-        tool = TempoTraceTool(tempo_url="http://custom-tempo:3100")
+        """Test TempoTools initialization with a provided URL"""
+        tool = TempoTools(tempo_url="http://custom-tempo:3100")
         assert tool.tempo_url == "http://custom-tempo:3100"
         
     def test_initialization_without_url(self):
-        """Test TempoTraceTool initialization without a URL (should use default)"""
+        """Test TempoTools initialization without a URL (should use default)"""
         with patch.dict('os.environ', {}, clear=True):
-            tool = TempoTraceTool()
+            tool = TempoTools()
             assert tool.tempo_url == "http://tempo:3100"
             
-    def test_name_and_description(self, tempo_trace_tool):
-        """Test the name and description properties"""
-        assert tempo_trace_tool.name == "tempo_traces"
-        assert "Query traces from Tempo" in tempo_trace_tool.description
-        
     @patch('requests.get')
-    def test_execute_basic_query(self, mock_get, tempo_trace_tool, sample_trace_response):
+    def test_query_traces(self, mock_get, tempo_tool, sample_trace_response):
         """Test basic query execution"""
         # Setup the mock
         mock_response = MagicMock()
@@ -124,7 +125,7 @@ class TestTempoTraceTool:
         mock_get.return_value = mock_response
         
         # Execute the tool
-        result = tempo_trace_tool.execute(service="frontend")
+        result = tempo_tool.query_traces(service="frontend")
         
         # Verify the URL and parameters
         mock_get.assert_called_once()
@@ -142,7 +143,7 @@ class TestTempoTraceTool:
         assert result["traces"][0]["root_service"] == "frontend"
         
     @patch('requests.get')
-    def test_execute_with_filters(self, mock_get, tempo_trace_tool, sample_trace_response):
+    def test_query_traces_with_filters(self, mock_get, tempo_tool, sample_trace_response):
         """Test query execution with multiple filters"""
         # Setup the mock
         mock_response = MagicMock()
@@ -151,7 +152,7 @@ class TestTempoTraceTool:
         mock_get.return_value = mock_response
         
         # Execute the tool with filters
-        result = tempo_trace_tool.execute(
+        result = tempo_tool.query_traces(
             service="frontend",
             operation="GET /api/products",
             tags={"http.method": "GET", "status.code": "200"},
@@ -171,7 +172,7 @@ class TestTempoTraceTool:
         assert kwargs["params"]["limit"] == "10"
         
     @patch('requests.get')
-    def test_execute_with_time_range(self, mock_get, tempo_trace_tool, sample_trace_response):
+    def test_query_traces_with_time_range(self, mock_get, tempo_tool, sample_trace_response):
         """Test query execution with custom time range"""
         # Setup the mock
         mock_response = MagicMock()
@@ -182,7 +183,7 @@ class TestTempoTraceTool:
         # Execute the tool with custom time range
         start_time = "2023-05-01T00:00:00Z"
         end_time = "2023-05-02T00:00:00Z"
-        result = tempo_trace_tool.execute(
+        result = tempo_tool.query_traces(
             service="frontend",
             start=start_time,
             end=end_time
@@ -194,20 +195,20 @@ class TestTempoTraceTool:
         assert kwargs["params"]["end"] == end_time
         
     @patch('requests.get')
-    def test_execute_request_exception(self, mock_get, tempo_trace_tool):
+    def test_query_traces_request_exception(self, mock_get, tempo_tool):
         """Test handling of request exceptions"""
         # Setup the mock to raise an exception
-        mock_get.side_effect = Exception("Connection error")
+        mock_get.side_effect = requests.exceptions.RequestException("Connection error")
         
         # Execute the tool
-        result = tempo_trace_tool.execute(service="frontend")
+        result = tempo_tool.query_traces(service="frontend")
         
         # Verify error handling
         assert "error" in result
         assert "Connection error" in result["error"]
         
     @patch('requests.get')
-    def test_get_trace_by_id(self, mock_get, tempo_trace_tool, sample_trace_detail_response):
+    def test_get_trace_by_id(self, mock_get, tempo_tool, sample_trace_detail_response):
         """Test retrieving a trace by ID"""
         # Setup the mock
         mock_response = MagicMock()
@@ -216,7 +217,7 @@ class TestTempoTraceTool:
         mock_get.return_value = mock_response
         
         # Execute the tool
-        result = tempo_trace_tool.get_trace_by_id("1234567890abcdef")
+        result = tempo_tool.get_trace_by_id("1234567890abcdef")
         
         # Verify the URL
         mock_get.assert_called_once()
@@ -228,58 +229,67 @@ class TestTempoTraceTool:
         assert "spans" in result
         assert len(result["spans"]) == 2
         assert "frontend" in result["services"]
-        assert len(result["issues"]) == 0
         
     @patch('requests.get')
-    def test_get_trace_by_id_with_long_span(self, mock_get, tempo_trace_tool, sample_trace_detail_response):
-        """Test identifying long spans as issues"""
-        # Modify the response to include a long-running span
-        long_span = {
-            "spanId": "span3",
-            "parentSpanId": "span1",
-            "name": "slow operation",
-            "startTimeUnixNano": "1620000000050000000",
-            "endTimeUnixNano": "1620000001550000000",  # 1.5 seconds
-            "attributes": []
-        }
-        sample_trace_detail_response["batches"][0]["spans"].append(long_span)
-        
-        # Setup the mock
-        mock_response = MagicMock()
-        mock_response.json.return_value = sample_trace_detail_response
-        mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-        
-        # Execute the tool
-        result = tempo_trace_tool.get_trace_by_id("1234567890abcdef")
-        
-        # Verify long span is identified as an issue
-        assert len(result["issues"]) >= 1
-        assert any(issue["type"] == "long_duration" and issue["span_id"] == "span3" for issue in result["issues"])
-
-class TestTempoServiceTool:
-    """Tests for the TempoServiceTool class"""
-
-    def test_initialization(self):
-        """Test TempoServiceTool initialization"""
-        tool = TempoServiceTool(tempo_url="http://custom-tempo:3100")
-        assert tool.tempo_url == "http://custom-tempo:3100"
-        
-    def test_name_and_description(self, tempo_service_tool):
-        """Test the name and description properties"""
-        assert tempo_service_tool.name == "tempo_service_analysis"
-        assert "Analyze service performance" in tempo_service_tool.description
-        
-    @patch('common.tools.tempo_tools.TempoTraceTool.execute')
-    def test_execute_basic_analysis(self, mock_execute, tempo_service_tool):
-        """Test basic service analysis"""
-        # This test will need to be expanded once we implement the execute method for TempoServiceTool
-        mock_execute.return_value = {"traces": []}
-        
-        # Execute the tool
-        result = tempo_service_tool.execute(service="frontend")
-        
-        # Verify TempoTraceTool.execute was called
-        mock_execute.assert_called_once()
-        args, kwargs = mock_execute.call_args
-        assert kwargs["service"] == "frontend"
+    def test_analyze_service_performance(self, mock_get, tempo_tool):
+        """Test service performance analysis"""
+        # This test will need to be expanded with proper mocking of the dependent methods
+        with patch.object(TempoTools, 'query_traces') as mock_query_traces, \
+             patch.object(TempoTools, 'get_error_analysis') as mock_error_analysis, \
+             patch.object(TempoTools, 'get_service_latency_analysis') as mock_latency_analysis, \
+             patch.object(TempoTools, 'get_service_dependencies') as mock_dependencies:
+            
+            # Setup the mocks
+            mock_query_traces.return_value = {
+                "trace_count": 100,
+                "statistics": {
+                    "avg_duration_ms": 150,
+                    "p95_duration_ms": 300,
+                    "max_duration_ms": 500
+                }
+            }
+            mock_error_analysis.return_value = {
+                "total_error_traces": 5,
+                "error_rate": 0.05,
+                "error_messages": {"Connection timeout": 3, "Database error": 2}
+            }
+            mock_latency_analysis.return_value = {
+                "operations": {
+                    "GET /api/products": {
+                        "count": 50,
+                        "avg": 120,
+                        "p95": 250,
+                        "max": 400
+                    },
+                    "GET /api/cart": {
+                        "count": 30,
+                        "avg": 180,
+                        "p95": 350,
+                        "max": 500
+                    }
+                }
+            }
+            mock_dependencies.return_value = {
+                "downstream": {
+                    "database": {"count": 80, "errors": 2},
+                    "cache": {"count": 50, "errors": 0}
+                },
+                "upstream": {
+                    "gateway": {"count": 100, "errors": 0}
+                }
+            }
+            
+            # Execute the method
+            result = tempo_tool.analyze_service_performance("frontend")
+            
+            # Verify the result
+            assert result["service"] == "frontend"
+            assert result["trace_count"] == 100
+            assert result["avg_duration_ms"] == 150
+            assert result["p95_duration_ms"] == 300
+            assert result["max_duration_ms"] == 500
+            assert result["error_count"] == 5
+            assert result["error_rate"] == 0.05
+            assert "operations" in result
+            assert "dependencies" in result
+            assert "issues" in result

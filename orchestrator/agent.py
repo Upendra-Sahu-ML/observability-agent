@@ -72,52 +72,182 @@ class OrchestratorAgent:
     async def setup_streams(self):
         """Set up the required NATS streams"""
         try:
+            # Get existing streams first
+            existing_streams = {}
+            try:
+                streams = await self.js.streams_info()
+                for stream in streams:
+                    existing_streams[stream.config.name] = stream.config
+                    logger.info(f"Found existing stream: {stream.config.name}")
+            except Exception as e:
+                logger.warning(f"Failed to get streams info: {str(e)}")
+
             # Create stream for alerts
             try:
-                await self.js.add_stream(name="ALERTS", 
-                                     subjects=["alerts", "alerts.*"])
-                logger.info("Created ALERTS stream")
-            except nats.errors.Error as e:
-                # Stream might already exist
-                logger.info(f"ALERTS stream setup: {str(e)}")
+                alerts_config = StreamConfig(
+                    name="ALERTS",
+                    subjects=["alerts", "alerts.*"],
+                    retention="limits",
+                    max_msgs=10000,
+                    max_bytes=1024*1024*100,  # 100MB
+                    max_age=3600*24*7,  # 7 days
+                    storage="memory",
+                    discard="old"
+                )
+                
+                if "ALERTS" in existing_streams:
+                    # Preserve the existing storage type if updating
+                    existing_config = existing_streams["ALERTS"]
+                    alerts_config.storage = existing_config.storage
+                    logger.info(f"ALERTS stream already exists, preserving storage type: {existing_config.storage}")
+                    
+                    # Update with preserved storage type
+                    try:
+                        await self.js.update_stream(config=alerts_config)
+                        logger.info("Updated ALERTS stream configuration")
+                    except Exception as update_err:
+                        logger.warning(f"Could not update ALERTS stream: {str(update_err)}")
+                else:
+                    # Create new stream
+                    await self.js.add_stream(config=alerts_config)
+                    logger.info("Created ALERTS stream")
+                    
+            except nats.js.errors.BadRequestError as e:
+                logger.warning(f"ALERTS stream error: {str(e)}")
             
             # Create stream for agent responses
             try:
-                await self.js.add_stream(name="RESPONSES", 
-                                     subjects=["orchestrator_response", "root_cause_result"])
-                logger.info("Created RESPONSES stream")
-            except nats.errors.Error as e:
-                # Stream might already exist
-                logger.info(f"RESPONSES stream setup: {str(e)}")
+                responses_config = StreamConfig(
+                    name="RESPONSES",
+                    subjects=["orchestrator_response", "root_cause_result"],
+                    retention="limits",
+                    max_msgs=10000,
+                    max_bytes=1024*1024*100,  # 100MB
+                    max_age=3600*24*7,  # 7 days
+                    storage="memory",
+                    discard="old"
+                )
+                
+                if "RESPONSES" in existing_streams:
+                    # Preserve the existing storage type if updating
+                    existing_config = existing_streams["RESPONSES"]
+                    responses_config.storage = existing_config.storage
+                    logger.info(f"RESPONSES stream already exists, preserving storage type: {existing_config.storage}")
+                    
+                    # Update with preserved storage type
+                    try:
+                        await self.js.update_stream(config=responses_config)
+                        logger.info("Updated RESPONSES stream configuration")
+                    except Exception as update_err:
+                        logger.warning(f"Could not update RESPONSES stream: {str(update_err)}")
+                else:
+                    # Create new stream
+                    await self.js.add_stream(config=responses_config)
+                    logger.info("Created RESPONSES stream")
+                
+            except nats.js.errors.BadRequestError as e:
+                logger.warning(f"RESPONSES stream error: {str(e)}")
             
             # Create stream for agent-specific messages
             try:
-                await self.js.add_stream(name="AGENT_TASKS", 
-                                     subjects=["metric_agent", "log_agent", "deployment_agent", 
-                                               "tracing_agent", "notification_agent", "postmortem_agent"])
-                logger.info("Created AGENT_TASKS stream")
-            except nats.errors.Error as e:
-                # Stream might already exist
-                logger.info(f"AGENT_TASKS stream setup: {str(e)}")
+                agent_tasks_config = StreamConfig(
+                    name="AGENT_TASKS",
+                    subjects=["metric_agent", "log_agent", "deployment_agent", 
+                             "tracing_agent", "notification_agent", "postmortem_agent"],
+                    retention="limits",
+                    max_msgs=10000,
+                    max_bytes=1024*1024*100,  # 100MB
+                    max_age=3600*24*7,  # 7 days
+                    storage="memory",
+                    discard="old"
+                )
+                
+                if "AGENT_TASKS" in existing_streams:
+                    # Preserve the existing storage type if updating
+                    existing_config = existing_streams["AGENT_TASKS"]
+                    agent_tasks_config.storage = existing_config.storage
+                    logger.info(f"AGENT_TASKS stream already exists, preserving storage type: {existing_config.storage}")
+                    
+                    # Update with preserved storage type
+                    try:
+                        await self.js.update_stream(config=agent_tasks_config)
+                        logger.info("Updated AGENT_TASKS stream configuration")
+                    except Exception as update_err:
+                        logger.warning(f"Could not update AGENT_TASKS stream: {str(update_err)}")
+                else:
+                    # Create new stream
+                    await self.js.add_stream(config=agent_tasks_config)
+                    logger.info("Created AGENT_TASKS stream")
+                
+            except nats.js.errors.BadRequestError as e:
+                logger.warning(f"AGENT_TASKS stream error: {str(e)}")
             
             # Create stream for alert data requests
             try:
-                await self.js.add_stream(name="ALERT_DATA", 
-                                     subjects=["alert_data_request", "alert_data_response.*"])
-                logger.info("Created ALERT_DATA stream")
-            except nats.errors.Error as e:
-                # Stream might already exist
-                logger.info(f"ALERT_DATA stream setup: {str(e)}")
+                alert_data_config = StreamConfig(
+                    name="ALERT_DATA",
+                    subjects=["alert_data_request", "alert_data_response.*"],
+                    retention="limits",
+                    max_msgs=10000,
+                    max_bytes=1024*1024*100,  # 100MB
+                    max_age=3600*24*7,  # 7 days
+                    storage="memory",
+                    discard="old"
+                )
+                
+                if "ALERT_DATA" in existing_streams:
+                    # Preserve the existing storage type if updating
+                    existing_config = existing_streams["ALERT_DATA"]
+                    alert_data_config.storage = existing_config.storage
+                    logger.info(f"ALERT_DATA stream already exists, preserving storage type: {existing_config.storage}")
+                    
+                    # Update with preserved storage type
+                    try:
+                        await self.js.update_stream(config=alert_data_config)
+                        logger.info("Updated ALERT_DATA stream configuration")
+                    except Exception as update_err:
+                        logger.warning(f"Could not update ALERT_DATA stream: {str(update_err)}")
+                else:
+                    # Create new stream
+                    await self.js.add_stream(config=alert_data_config)
+                    logger.info("Created ALERT_DATA stream")
+                
+            except nats.js.errors.BadRequestError as e:
+                logger.warning(f"ALERT_DATA stream error: {str(e)}")
             
             # Create stream for root cause analysis
             try:
-                await self.js.add_stream(name="ROOT_CAUSE", 
-                                     subjects=["root_cause_analysis"])
-                logger.info("Created ROOT_CAUSE stream")
-            except nats.errors.Error as e:
-                # Stream might already exist
-                logger.info(f"ROOT_CAUSE stream setup: {str(e)}")
-            
+                root_cause_config = StreamConfig(
+                    name="ROOT_CAUSE",
+                    subjects=["root_cause_analysis"],
+                    retention="limits",
+                    max_msgs=10000,
+                    max_bytes=1024*1024*100,  # 100MB
+                    max_age=3600*24*7,  # 7 days
+                    storage="memory",
+                    discard="old"
+                )
+                
+                if "ROOT_CAUSE" in existing_streams:
+                    # Preserve the existing storage type if updating
+                    existing_config = existing_streams["ROOT_CAUSE"]
+                    root_cause_config.storage = existing_config.storage
+                    logger.info(f"ROOT_CAUSE stream already exists, preserving storage type: {existing_config.storage}")
+                    
+                    # Update with preserved storage type
+                    try:
+                        await self.js.update_stream(config=root_cause_config)
+                        logger.info("Updated ROOT_CAUSE stream configuration")
+                    except Exception as update_err:
+                        logger.warning(f"Could not update ROOT_CAUSE stream: {str(update_err)}")
+                else:
+                    # Create new stream
+                    await self.js.add_stream(config=root_cause_config)
+                    logger.info("Created ROOT_CAUSE stream")
+                
+            except nats.js.errors.BadRequestError as e:
+                logger.warning(f"ROOT_CAUSE stream error: {str(e)}")
+        
         except Exception as e:
             logger.error(f"Failed to setup streams: {str(e)}")
             raise
@@ -473,72 +603,80 @@ class OrchestratorAgent:
 
     async def setup_subscriptions(self):
         """Set up all the necessary NATS subscriptions"""
-        # Create a durable consumer for alerts
-        alert_consumer = ConsumerConfig(
-            durable_name="orchestrator_alerts",
-            deliver_policy=DeliverPolicy.ALL,
-            ack_policy="explicit",
-            max_deliver=3
-        )
-        
-        # Subscribe to alerts
-        await self.js.subscribe(
-            "alerts",
-            cb=self.alert_message_handler,
-            config=alert_consumer
-        )
-        logger.info("Subscribed to alerts")
-        
-        # Create a durable consumer for agent responses
-        response_consumer = ConsumerConfig(
-            durable_name="orchestrator_responses",
-            deliver_policy=DeliverPolicy.ALL,
-            ack_policy="explicit",
-            max_deliver=3
-        )
-        
-        # Subscribe to agent responses
-        await self.js.subscribe(
-            "orchestrator_response",
-            cb=self.response_message_handler,
-            config=response_consumer
-        )
-        logger.info("Subscribed to agent responses")
-        
-        # Create a durable consumer for root cause results
-        root_cause_consumer = ConsumerConfig(
-            durable_name="orchestrator_root_cause",
-            deliver_policy=DeliverPolicy.ALL,
-            ack_policy="explicit",
-            max_deliver=3
-        )
-        
-        # Subscribe to root cause results
-        await self.js.subscribe(
-            "root_cause_result",
-            cb=self.root_cause_message_handler,
-            config=root_cause_consumer
-        )
-        logger.info("Subscribed to root cause results")
-        
-        # Create a durable consumer for alert data requests
-        alert_data_consumer = ConsumerConfig(
-            durable_name="orchestrator_alert_data",
-            deliver_policy=DeliverPolicy.ALL,
-            ack_policy="explicit",
-            max_deliver=3
-        )
-        
-        # Subscribe to alert data requests
-        await self.js.subscribe(
-            "alert_data_request",
-            cb=self.alert_data_request_handler,
-            config=alert_data_consumer
-        )
-        logger.info("Subscribed to alert data requests")
-        
-        # Start the timeout checker
-        asyncio.create_task(self.timeout_checker())
+        try:
+            # Create a durable consumer for alerts
+            alert_consumer = ConsumerConfig(
+                durable_name="orchestrator_alerts",
+                deliver_policy=DeliverPolicy.ALL,
+                ack_policy="explicit",
+                max_deliver=3
+            )
+            
+            # Subscribe to alerts - explicitly specify the stream name
+            await self.js.subscribe(
+                "alerts",
+                cb=self.alert_message_handler,
+                stream="ALERTS",
+                config=alert_consumer
+            )
+            logger.info("Subscribed to alerts")
+            
+            # Create a durable consumer for agent responses
+            response_consumer = ConsumerConfig(
+                durable_name="orchestrator_responses",
+                deliver_policy=DeliverPolicy.ALL,
+                ack_policy="explicit",
+                max_deliver=3
+            )
+            
+            # Subscribe to agent responses - explicitly specify the stream name
+            await self.js.subscribe(
+                "orchestrator_response",
+                cb=self.response_message_handler,
+                stream="RESPONSES",
+                config=response_consumer
+            )
+            logger.info("Subscribed to agent responses")
+            
+            # Create a durable consumer for root cause results
+            root_cause_consumer = ConsumerConfig(
+                durable_name="orchestrator_root_cause",
+                deliver_policy=DeliverPolicy.ALL,
+                ack_policy="explicit",
+                max_deliver=3
+            )
+            
+            # Subscribe to root cause results - explicitly specify the stream name
+            await self.js.subscribe(
+                "root_cause_result",
+                cb=self.root_cause_message_handler,
+                stream="RESPONSES",
+                config=root_cause_consumer
+            )
+            logger.info("Subscribed to root cause results")
+            
+            # Create a durable consumer for alert data requests
+            alert_data_consumer = ConsumerConfig(
+                durable_name="orchestrator_alert_data",
+                deliver_policy=DeliverPolicy.ALL,
+                ack_policy="explicit",
+                max_deliver=3
+            )
+            
+            # Subscribe to alert data requests - explicitly specify the stream name
+            await self.js.subscribe(
+                "alert_data_request",
+                cb=self.alert_data_request_handler,
+                stream="ALERT_DATA",
+                config=alert_data_consumer
+            )
+            logger.info("Subscribed to alert data requests")
+            
+            # Start the timeout checker
+            asyncio.create_task(self.timeout_checker())
+        except Exception as e:
+            logger.error(f"Error setting up subscriptions: {str(e)}", exc_info=True)
+            raise
 
     async def run_async(self):
         """Run the orchestrator agent asynchronously"""

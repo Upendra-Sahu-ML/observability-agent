@@ -288,16 +288,89 @@ class DeploymentAgent:
             ack_wait=60,    # Wait 60 seconds for acknowledgment
         )
         
-        # Subscribe to the stream with the consumer configuration
-        await self.js.subscribe(
-            "deployment_agent",
-            cb=self.message_handler,
-            queue="deployment_processors",
-            config=consumer_config
-        )
-        
-        logger.info("[DeploymentAgent] Subscribed to deployment_agent stream")
-        
-        # Keep the connection alive
-        while True:
-            await asyncio.sleep(3600)  # Sleep for an hour, or until interrupted
+        try:
+            # First check if the AGENT_TASKS stream exists
+            stream_exists = False
+            try:
+                stream_info = await self.js.stream_info("AGENT_TASKS")
+                if "deployment_agent" in stream_info.config.subjects:
+                    stream_exists = True
+                    logger.info("[DeploymentAgent] AGENT_TASKS stream found with deployment_agent subject")
+                else:
+                    # Try to update the stream to include our subject
+                    try:
+                        current_subjects = stream_info.config.subjects
+                        new_subjects = current_subjects + ["deployment_agent"]
+                        await self.js.update_stream(
+                            name="AGENT_TASKS",
+                            subjects=new_subjects
+                        )
+                        stream_exists = True
+                        logger.info("[DeploymentAgent] Updated AGENT_TASKS stream to include deployment_agent subject")
+                    except Exception as e:
+                        logger.warning(f"[DeploymentAgent] Failed to update AGENT_TASKS stream: {str(e)}")
+            except nats.js.errors.NotFoundError:
+                logger.warning("[DeploymentAgent] AGENT_TASKS stream not found, will create it")
+            except Exception as e:
+                logger.warning(f"[DeploymentAgent] Error checking stream: {str(e)}")
+            
+            # If stream doesn't exist or didn't have our subject, create it
+            if not stream_exists:
+                try:
+                    # Create the stream explicitly
+                    await self.js.add_stream(
+                        name="AGENT_TASKS",
+                        subjects=["deployment_agent", "metric_agent", "log_agent", "tracing_agent", 
+                                 "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent"]
+                    )
+                    logger.info("[DeploymentAgent] Created AGENT_TASKS stream")
+                    stream_exists = True
+                except nats.js.errors.BadRequestError as e:
+                    if "already in use" in str(e):
+                        # Stream exists but maybe with different subjects
+                        logger.info("[DeploymentAgent] AGENT_TASKS stream already exists")
+                        stream_exists = True
+                    else:
+                        logger.error(f"[DeploymentAgent] Failed to create AGENT_TASKS stream: {str(e)}")
+                except Exception as e:
+                    logger.error(f"[DeploymentAgent] Failed to create AGENT_TASKS stream: {str(e)}")
+            
+            # Only proceed with subscription if the stream exists
+            if stream_exists:
+                # Subscribe to the stream with the consumer configuration
+                subscription = await self.js.subscribe(
+                    "deployment_agent",
+                    cb=self.message_handler,
+                    queue="deployment_processors",
+                    config=consumer_config
+                )
+                
+                logger.info("[DeploymentAgent] Subscribed to deployment_agent stream")
+                
+                # Keep the connection alive
+                while True:
+                    await asyncio.sleep(3600)  # Sleep for an hour, or until interrupted
+            else:
+                logger.error("[DeploymentAgent] Cannot subscribe: AGENT_TASKS stream not available")
+                # Retry periodically
+                while True:
+                    logger.info("[DeploymentAgent] Will retry stream setup in 30 seconds...")
+                    await asyncio.sleep(30)
+                    # Try calling listen again after delay
+                    return await self.listen()
+                    
+        except nats.js.errors.NotFoundError as e:
+            logger.error(f"[DeploymentAgent] Stream not found error: {str(e)}")
+            # Wait and retry
+            logger.info("[DeploymentAgent] Will retry stream setup in 30 seconds...")
+            await asyncio.sleep(30)
+            # Try calling listen again after delay
+            return await self.listen()
+            
+        except Exception as e:
+            logger.error(f"[DeploymentAgent] Unexpected error in listen(): {str(e)}", exc_info=True)
+            # Wait and retry
+            logger.info("[DeploymentAgent] Will retry in 30 seconds...")
+            await asyncio.sleep(30)
+            # Try calling listen again after delay
+            return await self.listen()

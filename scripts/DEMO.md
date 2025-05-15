@@ -5,21 +5,23 @@
 1. **System Requirements**
    - Kubernetes cluster running
    - Helm installed
-   - Python 3.10+
-   - Redis server
+   - Python 3.9+
+   - NATS with JetStream enabled
    - Qdrant server
 
 2. **Pre-demo Setup**
    ```bash
-   # 1. Deploy the system
+   # 1. Deploy the observability-agent system
    helm install observability-agent ./helm/observability-agent
 
    # 2. Verify deployment
    kubectl get pods
 
-   # 3. Install alert publisher
-   pip install redis
-   chmod +x scripts/alert_publisher.py
+   # 3. Build and deploy the alert publisher
+   make alert-publisher REGISTRY=your-registry
+   docker push your-registry/alert-publisher:latest
+   sed -i 's|\${REGISTRY}|your-registry|g' scripts/alert-publisher-k8s.yaml
+   kubectl apply -f scripts/alert-publisher-k8s.yaml
    ```
 
 ## Demo Structure (60 minutes)
@@ -32,10 +34,11 @@
   - Metric Agent: CPU, Memory, Latency analysis
   - Log Agent: Error pattern detection
   - Deployment Agent: Deployment status monitoring
+  - Tracing Agent: Distributed trace analysis
   - Notification Agent: Multi-channel alerting
   - Postmortem Agent: Incident documentation
 - **Knowledge Base (Qdrant)**: Vector storage for incidents and pattern recognition
-- **Message Bus (Redis)**: Pub/sub communication and state synchronization
+- **Message Bus (NATS JetStream)**: Pub/sub communication and state synchronization
 
 #### Data Flow
 1. Alert Ingestion → Orchestrator
@@ -51,12 +54,15 @@
 # Terminal 1: Watch orchestrator
 kubectl logs -f deployment/observability-agent-orchestrator
 
-# Terminal 2: Watch Redis
-redis-cli
-> SUBSCRIBE alerts
+# Terminal 2: Watch NATS streams
+kubectl exec -it deployment/observability-agent-nats -- nats stream info ALERTS
 
 # Terminal 3: Generate alert
-./scripts/alert_publisher.py --alert-type cpu --count 1
+# Option 1: Use the deployed container
+kubectl logs -f pod/alert-publisher-once
+
+# Option 2: Run a one-time job
+kubectl run alert-publisher-job --image=your-registry/alert-publisher:latest --restart=Never -- --alert-type cpu --count 1
 ```
 
 **What to Explain:**
@@ -68,10 +74,10 @@ redis-cli
 #### B. Knowledge Base Integration (5 minutes)
 ```bash
 # View stored incidents
-curl http://localhost:6333/collections/incidents/points
+curl http://observability-agent-qdrant:6333/collections/incidents/points
 
 # Search similar incidents
-curl -X POST http://localhost:6333/collections/incidents/points/search \
+curl -X POST http://observability-agent-qdrant:6333/collections/incidents/points/search \
   -H "Content-Type: application/json" \
   -d '{"vector": [0.1, 0.2, 0.3], "limit": 5}'
 ```
@@ -97,10 +103,10 @@ kubectl logs -f deployment/observability-agent-postmortem-agent
 
 #### D. Complex Scenario (5 minutes)
 ```bash
-# Simulate complex incident
-./scripts/alert_publisher.py --alert-type cpu --count 1
-./scripts/alert_publisher.py --alert-type error_rate --count 1
-./scripts/alert_publisher.py --alert-type latency --count 1
+# Simulate complex incident with multiple alert types
+kubectl run complex-scenario --image=your-registry/alert-publisher:latest --restart=Never -- --alert-type cpu --count 1
+kubectl run latency-alert --image=your-registry/alert-publisher:latest --restart=Never -- --alert-type latency --count 1
+kubectl run error-alert --image=your-registry/alert-publisher:latest --restart=Never -- --alert-type error_rate --count 1
 ```
 
 **What to Explain:**
@@ -122,6 +128,11 @@ kubectl logs -f deployment/observability-agent-postmortem-agent
   - Error correlation
   - Context analysis
 
+- **Tracing Agent**
+  - Distributed trace analysis
+  - Service dependency mapping
+  - Performance bottleneck identification
+
 - **Deployment Agent**
   - Status monitoring
   - Rollback detection
@@ -135,8 +146,33 @@ kubectl logs -f deployment/observability-agent-postmortem-agent
 
 #### C. System Scalability
 ```bash
-# Load test
-./scripts/alert_publisher.py --count 10 --interval 2
+# Load test with continuous alerts
+kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-test-publisher
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: load-test-publisher
+  template:
+    metadata:
+      labels:
+        app: load-test-publisher
+    spec:
+      containers:
+      - name: alert-publisher
+        image: your-registry/alert-publisher:latest
+        args:
+        - "--alert-type"
+        - "random"
+        - "--count"
+        - "10"
+        - "--interval"
+        - "2"
+EOF
 
 # Monitor resources
 kubectl top pods
@@ -173,12 +209,11 @@ kubectl top pods
 
 1. **Alert Not Received**
    ```bash
-   # Check Redis connection
-   redis-cli ping
+   # Check NATS connection
+   kubectl exec -it deployment/observability-agent-nats -- nats server info
    
-   # Verify channel
-   redis-cli
-   > SUBSCRIBE alerts
+   # Verify ALERTS stream existence
+   kubectl exec -it deployment/observability-agent-nats -- nats stream info ALERTS
    ```
 
 2. **Agent Not Responding**
@@ -193,10 +228,10 @@ kubectl top pods
 3. **Knowledge Base Issues**
    ```bash
    # Check Qdrant status
-   curl http://localhost:6333/health
+   curl http://observability-agent-qdrant:6333/health
    
    # Verify collection
-   curl http://localhost:6333/collections/incidents
+   curl http://observability-agent-qdrant:6333/collections/incidents
    ```
 
 ## Demo Tips
@@ -217,4 +252,4 @@ kubectl top pods
 1. Share documentation
 2. Provide test environment access
 3. Collect feedback
-4. Schedule follow-up meetings 
+4. Schedule follow-up meetings
