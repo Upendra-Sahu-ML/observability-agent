@@ -5,245 +5,260 @@ This documentation describes the tools available in the `common/tools` directory
 ## Directory Structure
 ```
 common/tools/
-├── TOOLS.md                 # This documentation
-├── knowledge_tools.py       # Knowledge base and incident management tools
-├── notification_tools.py    # Multi-channel notification tools
-└── templates/              # Template directory for postmortems and runbooks
+├── __init__.py
+├── TOOLS.md                # This documentation
+├── argocd_tools.py         # ArgoCD integration tools
+├── base.py                 # Base classes and utilities
+├── deployment_tools.py     # Deployment monitoring tools
+├── git_tools.py            # Git repository tools
+├── knowledge_tools.py      # Knowledge base and incident management tools
+├── kube_tools.py           # Kubernetes integration tools
+├── log_tools.py            # Log analysis tools
+├── metric_tools.py         # Metric analysis tools
+├── notification_tools.py   # Multi-channel notification tools
+├── prometheus_tools.py     # Prometheus query utilities (used by metric_tools)
+├── root_cause_tools.py     # Root cause analysis tools
+├── runbook_tools.py        # Runbook management tools
+└── tempo_tools.py          # Distributed tracing tools
 ```
 
 ## Core Tools Overview
 
-### 1. Knowledge Tools (`knowledge_tools.py`)
+### Root Cause Analysis Tools
 
-#### Purpose
-The Knowledge Tools provide a centralized system for storing, retrieving, and analyzing incident data using vector storage (Qdrant). They enable intelligent incident management and pattern recognition.
+#### 1. `root_cause_tools.py`
+- **Purpose**: Analyze system components to identify the root cause of incidents
+- **Key Functions**:
+  - `correlation_analysis`: Analyzes correlations between system components and events
+  - `dependency_analysis`: Analyzes service dependencies and their impact on the system
+- **Usage in Agents**: Root Cause Agent
+- **Example**:
+  ```python
+  from common.tools.root_cause_tools import correlation_analysis, dependency_analysis
+  
+  # Analyze correlations
+  correlation_results = correlation_analysis(
+      events=[...],
+      time_window="1h",
+      correlation_threshold=0.7
+  )
+  
+  # Analyze dependencies
+  dependency_results = dependency_analysis(
+      services=["service-a", "service-b"],
+      include_transitive=True
+  )
+  ```
 
-#### Components
+### Notification Tools
 
-1. **KnowledgeBaseTool**
-   - **Purpose**: Manages incident data storage and retrieval
-   - **Key Features**:
-     - Vector storage for semantic search
-     - Metadata management
-     - Historical incident tracking
-   - **Use Cases**:
-     - Storing incident details
-     - Finding similar past incidents
-     - Pattern recognition across incidents
-   - **Example**:
-     ```python
-     from common.tools.knowledge_tools import KnowledgeBaseTool
-     
-     # Initialize tool
-     knowledge_tool = KnowledgeBaseTool()
-     
-     # Store an incident
-     knowledge_tool.store_incident(incident_data)
-     
-     # Search similar incidents
-     similar_incidents = knowledge_tool.search_similar(incident_vector)
-     ```
+#### 2. `notification_tools.py`
+- **Purpose**: Send notifications through various channels
+- **Key Classes**:
+  - `NotificationTools`: Contains tools for Slack, PagerDuty, and Webex notifications
+- **Key Methods**:
+  - `send_slack_message`: Send notifications to Slack channels
+  - `create_pagerduty_incident`: Create incidents in PagerDuty
+  - `send_webex_message`: Send messages to Webex Teams
+  - `send_multi_channel_notification`: Send to multiple channels at once
+- **Usage in Agents**: Notification Agent
+- **Example**:
+  ```python
+  from common.tools.notification_tools import NotificationTools
+  
+  notification_tools = NotificationTools()
+  
+  # Send a Slack message
+  notification_tools.send_slack_message(
+      message="Critical system alert!",
+      channel="#incidents"
+  )
+  
+  # Create a PagerDuty incident
+  notification_tools.create_pagerduty_incident(
+      title="Database failure",
+      description="Primary database is not responding",
+      severity="critical"
+  )
+  ```
 
-2. **PostmortemTemplateTool**
-   - **Purpose**: Manages postmortem documentation templates
-   - **Key Features**:
-     - Template management
-     - Dynamic content generation
-     - Version control
-   - **Use Cases**:
-     - Creating standardized postmortems
-     - Maintaining documentation consistency
-     - Tracking incident resolutions
-   - **Example**:
-     ```python
-     from common.tools.knowledge_tools import PostmortemTemplateTool
-     
-     # Initialize tool
-     template_tool = PostmortemTemplateTool()
-     
-     # Generate postmortem
-     postmortem = template_tool.generate_postmortem(incident_data)
-     ```
+### Knowledge Management Tools
 
-3. **RunbookUpdateTool**
-   - **Purpose**: Manages runbook updates based on incident learnings
-   - **Key Features**:
-     - Runbook versioning
-     - Update tracking
-     - Change history
-   - **Use Cases**:
-     - Updating runbooks after incidents
-     - Maintaining operational documentation
-     - Tracking procedural changes
-   - **Example**:
-     ```python
-     from common.tools.knowledge_tools import RunbookUpdateTool
-     
-     # Initialize tool
-     runbook_tool = RunbookUpdateTool()
-     
-     # Update runbook
-     runbook_tool.update_runbook(incident_id, new_procedures)
-     ```
+#### 3. `knowledge_tools.py`
+- **Purpose**: Manage knowledge base, postmortems, and runbooks
+- **Key Classes**:
+  - `KnowledgeBaseTool`: Manages incident data in vector database
+  - `PostmortemTemplateTool`: Handles postmortem template operations
+  - `PostmortemGeneratorTool`: Generates comprehensive postmortem documents
+  - `RunbookUpdateTool`: Manages runbook updates
+- **Key Methods**:
+  - `store_incident`: Store incident data in knowledge base
+  - `retrieve_incident`: Retrieve incident data by ID
+  - `search_incidents`: Search for similar incidents
+  - `get_template`: Get a postmortem template
+  - `fill_template`: Fill a template with incident data
+  - `generate_postmortem`: Generate a complete postmortem document
+  - `update_runbook`: Update existing runbook
+  - `create_runbook`: Create a new runbook
+- **Usage in Agents**: Postmortem Agent, Runbook Agent
+- **Example**:
+  ```python
+  from common.tools.knowledge_tools import PostmortemGeneratorTool
+  
+  generator = PostmortemGeneratorTool()
+  
+  # Generate a postmortem
+  postmortem = generator.generate_postmortem(
+      incident_data={"alert_id": "alert-123", "service": "api", "severity": "high"},
+      root_cause="Database connection pool exhaustion",
+      impact="API latency increased by 300%",
+      resolution="Increased connection pool size and implemented circuit breaker"
+  )
+  ```
 
-### 2. Notification Tools (`notification_tools.py`)
+### Metric Analysis Tools
 
-#### Purpose
-The Notification Tools provide a unified interface for sending alerts and notifications across multiple channels, ensuring timely communication of incidents.
+#### 4. `metric_tools.py` and `prometheus_tools.py`
+- **Purpose**: Query and analyze system metrics
+- **Key Classes**:
+  - `PrometheusQueryTool`: High-level interface for Prometheus queries
+  - `MetricAnalysisTool`: Analyze metric data to identify trends and anomalies
+  - `PrometheusTools`: Low-level Prometheus API client (used by PrometheusQueryTool)
+- **Key Methods**:
+  - `query_metrics`: Execute a PromQL query
+  - `get_cpu_metrics`: Get CPU utilization metrics
+  - `get_memory_metrics`: Get memory usage metrics
+  - `get_error_rate`: Get error rate metrics
+  - `get_service_health`: Get overall service health metrics
+  - `analyze_trend`: Analyze metric trends
+  - `analyze_anomalies`: Detect anomalies in metrics
+  - `analyze_threshold`: Analyze metrics against thresholds
+- **Usage in Agents**: Metric Agent
+- **Example**:
+  ```python
+  from common.tools.metric_tools import PrometheusQueryTool, MetricAnalysisTool
+  
+  query_tool = PrometheusQueryTool()
+  analysis_tool = MetricAnalysisTool()
+  
+  # Query CPU metrics
+  cpu_metrics = query_tool.get_cpu_metrics(
+      service="payment-service",
+      duration="1h"
+  )
+  
+  # Analyze for anomalies
+  anomalies = analysis_tool.analyze_anomalies(metrics=cpu_metrics)
+  ```
 
-#### Components
+### Log Analysis Tools
 
-1. **SlackNotificationTool**
-   - **Purpose**: Manages Slack notifications
-   - **Key Features**:
-     - Channel management
-     - Message formatting
-     - Thread support
-   - **Use Cases**:
-     - Team notifications
-     - Incident updates
-     - Status reports
-   - **Example**:
-     ```python
-     from common.tools.notification_tools import SlackNotificationTool
-     
-     # Initialize tool
-     slack_tool = SlackNotificationTool()
-     
-     # Send Slack notification
-     slack_tool.send_alert(channel, message, severity)
-     ```
+#### 5. `log_tools.py`
+- **Purpose**: Analyze logs to identify patterns and anomalies
+- **Key Classes/Functions**: Various log analysis tools
+- **Usage in Agents**: Log Agent
+- **Example**:
+  ```python
+  from common.tools.log_tools import ElasticsearchLogTool
+  
+  log_tool = ElasticsearchLogTool()
+  
+  # Search logs
+  logs = log_tool.search_logs(
+      query="error",
+      service="authentication-service",
+      time_range="30m"
+  )
+  
+  # Analyze log patterns
+  patterns = log_tool.analyze_patterns(logs)
+  ```
 
-2. **PagerDutyNotificationTool**
-   - **Purpose**: Manages PagerDuty incident creation and updates
-   - **Key Features**:
-     - Incident management
-     - Priority handling
-     - On-call routing
-   - **Use Cases**:
-     - Critical incident alerts
-     - On-call notifications
-     - Incident escalation
-   - **Example**:
-     ```python
-     from common.tools.notification_tools import PagerDutyNotificationTool
-     
-     # Initialize tool
-     pagerduty_tool = PagerDutyNotificationTool()
-     
-     # Create PagerDuty incident
-     pagerduty_tool.create_incident(service, description, priority)
-     ```
+### Deployment Analysis Tools
 
-3. **WebexNotificationTool**
-   - **Purpose**: Manages Webex notifications
-   - **Key Features**:
-     - Space management
-     - Message formatting
-     - File sharing
-   - **Use Cases**:
-     - Team communications
-     - Status updates
-     - File sharing
-   - **Example**:
-     ```python
-     from common.tools.notification_tools import WebexNotificationTool
-     
-     # Initialize tool
-     webex_tool = WebexNotificationTool()
-     
-     # Send Webex message
-     webex_tool.send_message(space_id, message, attachments)
-     ```
+#### 6. `deployment_tools.py`, `argocd_tools.py`, `kube_tools.py`
+- **Purpose**: Monitor and analyze deployments
+- **Key Functionality**: 
+  - Kubernetes resource monitoring
+  - ArgoCD deployment tracking
+  - Deployment health analysis
+- **Usage in Agents**: Deployment Agent
+- **Example**:
+  ```python
+  from common.tools.kube_tools import KubernetesAPITool
+  
+  kube_tool = KubernetesAPITool()
+  
+  # Get deployment status
+  deployment = kube_tool.get_deployment(
+      name="web-frontend",
+      namespace="production"
+  )
+  
+  # Check recent changes
+  changes = kube_tool.get_recent_changes(
+      namespace="production",
+      time_window="1h"
+  )
+  ```
 
-## Tool Integration
+### Tracing Analysis Tools
 
-### 1. Knowledge Base Integration
-- **Purpose**: Provides intelligent incident management
-- **Benefits**:
-  - Historical pattern recognition
-  - Similar incident detection
-  - Automated documentation
-- **Integration Points**:
-  - Incident storage
-  - Pattern analysis
-  - Documentation generation
+#### 7. `tempo_tools.py`
+- **Purpose**: Analyze distributed traces
+- **Key Functionality**: Tempo/Jaeger trace analysis
+- **Usage in Agents**: Tracing Agent
+- **Example**:
+  ```python
+  from common.tools.tempo_tools import TempoTracingTool
+  
+  tracing_tool = TempoTracingTool()
+  
+  # Search traces
+  traces = tracing_tool.search_traces(
+      service="payment-service",
+      operation="processPayment",
+      time_range="15m"
+  )
+  
+  # Analyze latency
+  latency_analysis = tracing_tool.analyze_latency(traces)
+  ```
 
-### 2. Notification System Integration
-- **Purpose**: Ensures timely incident communication
-- **Benefits**:
-  - Multi-channel alerts
-  - Priority-based routing
-  - Consistent messaging
-- **Integration Points**:
-  - Alert distribution
-  - Status updates
-  - Team notifications
+## Tool Integration with CrewAI
 
-## Best Practices
+All tools in the Observability Agent System use the CrewAI tool decorator pattern, which allows them to be directly used by CrewAI agents:
 
-### 1. Knowledge Tools
-- Regular vector database maintenance
-- Template version control
-- Runbook update tracking
-- Incident data validation
+```python
+from crewai import Agent
+from crewai.tools import tool
+from common.tools.notification_tools import NotificationTools
 
-### 2. Notification Tools
-- Rate limiting implementation
-- Message templating
-- Channel prioritization
-- Delivery tracking
+# Initialize tools
+notification_tools = NotificationTools()
 
-## Configuration
-
-### 1. Knowledge Base
-```yaml
-knowledge_base:
-  qdrant_url: "http://localhost:6333"
-  collection_name: "incidents"
-  vector_size: 768
-  template_dir: "/templates"
-  runbook_dir: "/runbooks"
+# Create an agent that uses the tools
+agent = Agent(
+    role="Notification Manager",
+    goal="Send appropriate notifications for incidents",
+    tools=[
+        notification_tools.send_slack_message,
+        notification_tools.create_pagerduty_incident,
+        notification_tools.send_webex_message,
+        notification_tools.send_multi_channel_notification
+    ]
+)
 ```
 
-### 2. Notification System
-```yaml
-notifications:
-  slack:
-    webhook_url: "https://hooks.slack.com/services/..."
-    default_channel: "#alerts"
-  pagerduty:
-    api_key: "your-api-key"
-    service_id: "your-service-id"
-  webex:
-    access_token: "your-access-token"
-    default_space: "your-space-id"
-```
+## Communication with NATS
 
-## Troubleshooting
+The tools themselves don't directly communicate with NATS. Instead, the agents use NATS for inter-agent communication while leveraging the tools for specific tasks. This separation of concerns allows tools to be focused on their specific functionality while the messaging infrastructure is handled at the agent level.
 
-### 1. Knowledge Base Issues
-- Vector database connectivity
-- Collection management
-- Template loading
-- Runbook updates
+## Future Tool Enhancements
 
-### 2. Notification Issues
-- Channel connectivity
-- Message delivery
-- Rate limiting
-- Authentication
-
-## Future Enhancements
-
-### 1. Knowledge Tools
-- Advanced pattern recognition
-- Machine learning integration
-- Automated categorization
-- Enhanced search capabilities
-
-### 2. Notification Tools
-- Additional channels
-- Advanced templating
-- Delivery analytics
-- Custom workflows 
+Upcoming tool improvements include:
+- Enhanced correlation analysis with ML capabilities
+- Extended metric anomaly detection algorithms
+- Automated runbook generation based on incidents
+- Integration with more notification channels
+- Advanced log analysis with NLP techniques

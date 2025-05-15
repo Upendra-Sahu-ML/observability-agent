@@ -7,13 +7,13 @@ import requests
 import json
 from datetime import datetime, timedelta
 from urllib.parse import urljoin
-from common.tools.base import AgentTool
+from crewai.tools import tool
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-class TempoTraceTool(AgentTool):
-    """Tool for querying traces from Tempo"""
+class TempoTools:
+    """Collection of tools for working with Tempo distributed tracing data"""
     
     def __init__(self, tempo_url=None):
         """
@@ -28,15 +28,8 @@ class TempoTraceTool(AgentTool):
             logger.warning("Tempo URL not provided, using default: http://tempo:3100")
             self.tempo_url = "http://tempo:3100"
     
-    @property
-    def name(self):
-        return "tempo_traces"
-    
-    @property
-    def description(self):
-        return "Query traces from Tempo distributed tracing system"
-    
-    def execute(self, service=None, operation=None, tags=None, minDuration=None, maxDuration=None, limit=20, start=None, end=None):
+    @tool("Query traces from Tempo distributed tracing system")
+    def query_traces(self, service=None, operation=None, tags=None, minDuration=None, maxDuration=None, limit=20, start=None, end=None):
         """
         Query traces from Tempo
         
@@ -142,6 +135,7 @@ class TempoTraceTool(AgentTool):
             logger.error(f"Error querying Tempo: {str(e)}")
             return {"error": str(e), "status_code": getattr(e.response, "status_code", None) if hasattr(e, "response") else None}
     
+    @tool("Get detailed information about a specific trace")
     def get_trace_by_id(self, trace_id):
         """
         Get detailed information about a specific trace
@@ -290,6 +284,7 @@ class TempoTraceTool(AgentTool):
             logger.error(f"Error getting trace from Tempo: {str(e)}")
             return {"error": str(e), "status_code": getattr(e.response, "status_code", None) if hasattr(e, "response") else None}
 
+    @tool("Analyze service latency patterns")
     def get_service_latency_analysis(self, service, start=None, end=None, limit=100):
         """
         Analyze service latency patterns
@@ -303,27 +298,22 @@ class TempoTraceTool(AgentTool):
         Returns:
             dict: Latency analysis results
         """
-        traces = self.execute(service=service, start=start, end=end, limit=limit)
+        traces = self.query_traces(service=service, start=start, end=end, limit=limit)
         
         latencies = []
         error_count = 0
         operation_latencies = {}
         
         for trace in traces.get("traces", []):
-            for span in trace.get("spans", []):
-                if span.get("serviceName") == service:
-                    duration = span.get("durationNanos", 0) / 1e6  # Convert to milliseconds
-                    latencies.append(duration)
-                    
-                    # Track operation-specific latencies
-                    operation = span.get("operationName", "unknown")
-                    if operation not in operation_latencies:
-                        operation_latencies[operation] = []
-                    operation_latencies[operation].append(duration)
-                    
-                    # Count errors
-                    if span.get("tags", {}).get("error", False):
-                        error_count += 1
+            # For simplicity, we'll use the trace duration as a proxy for service latency
+            duration = trace.get("duration_ms", 0)
+            latencies.append(duration)
+            
+            # Track operation-specific latencies if available
+            operation = trace.get("root_operation", "unknown")
+            if operation not in operation_latencies:
+                operation_latencies[operation] = []
+            operation_latencies[operation].append(duration)
         
         if not latencies:
             return {"error": "No latency data found"}
@@ -335,9 +325,7 @@ class TempoTraceTool(AgentTool):
             "max": max(latencies),
             "avg": sum(latencies) / len(latencies),
             "p95": sorted(latencies)[int(len(latencies) * 0.95)],
-            "p99": sorted(latencies)[int(len(latencies) * 0.99)],
-            "error_count": error_count,
-            "error_rate": error_count / len(latencies) if latencies else 0
+            "p99": sorted(latencies)[int(len(latencies) * 0.99)] if len(latencies) >= 100 else sorted(latencies)[-1]
         }
         
         # Calculate operation-specific statistics
@@ -348,13 +336,13 @@ class TempoTraceTool(AgentTool):
                 "min": min(op_latencies),
                 "max": max(op_latencies),
                 "avg": sum(op_latencies) / len(op_latencies),
-                "p95": sorted(op_latencies)[int(len(op_latencies) * 0.95)],
-                "p99": sorted(op_latencies)[int(len(op_latencies) * 0.99)]
+                "p95": sorted(op_latencies)[int(len(op_latencies) * 0.95)] if len(op_latencies) >= 20 else sorted(op_latencies)[-1]
             }
         
         stats["operations"] = operation_stats
         return stats
 
+    @tool("Analyze service dependencies from traces")
     def get_service_dependencies(self, service, start=None, end=None, limit=100):
         """
         Analyze service dependencies from traces
@@ -368,70 +356,74 @@ class TempoTraceTool(AgentTool):
         Returns:
             dict: Service dependency analysis
         """
-        traces = self.execute(service=service, start=start, end=end, limit=limit)
+        # First get the traces for the service
+        traces = self.query_traces(service=service, start=start, end=end, limit=limit)
         
         dependencies = {
             "upstream": {},  # Services that call this service
             "downstream": {}  # Services called by this service
         }
         
+        # For each trace, get detailed information to analyze dependencies
         for trace in traces.get("traces", []):
-            spans = trace.get("spans", [])
-            
-            # Find the service's span
-            service_span = None
-            for span in spans:
-                if span.get("serviceName") == service:
-                    service_span = span
-                    break
-            
-            if not service_span:
+            trace_id = trace.get("trace_id")
+            if not trace_id:
                 continue
                 
-            # Analyze upstream dependencies
-            for span in spans:
-                if span.get("parentSpanId") == service_span.get("spanId"):
-                    upstream_service = span.get("serviceName")
-                    if upstream_service not in dependencies["upstream"]:
-                        dependencies["upstream"][upstream_service] = {
-                            "count": 0,
-                            "errors": 0,
-                            "avg_latency": 0,
-                            "latencies": []
-                        }
-                    
-                    dep = dependencies["upstream"][upstream_service]
-                    dep["count"] += 1
-                    if span.get("tags", {}).get("error", False):
-                        dep["errors"] += 1
-                    
-                    latency = span.get("durationNanos", 0) / 1e6
-                    dep["latencies"].append(latency)
-                    dep["avg_latency"] = sum(dep["latencies"]) / len(dep["latencies"])
+            # Get the detailed trace
+            detailed_trace = self.get_trace_by_id(trace_id)
             
-            # Analyze downstream dependencies
-            for span in spans:
-                if span.get("spanId") == service_span.get("parentSpanId"):
-                    downstream_service = span.get("serviceName")
-                    if downstream_service not in dependencies["downstream"]:
-                        dependencies["downstream"][downstream_service] = {
-                            "count": 0,
-                            "errors": 0,
-                            "avg_latency": 0,
-                            "latencies": []
-                        }
+            # Skip if there was an error getting the trace
+            if "error" in detailed_trace:
+                continue
+                
+            # Track services in this trace
+            services_in_trace = detailed_trace.get("services", [])
+            
+            # If the service we're analyzing isn't in the trace, skip
+            if service not in services_in_trace:
+                continue
+                
+            # Analyze the spans to determine dependencies
+            for span in detailed_trace.get("spans", []):
+                span_service = span.get("attributes", {}).get("service.name", "unknown")
+                
+                # If the span is from our service, look for downstream dependencies
+                if span_service == service:
+                    # Spans with parent span ID that aren't from the same service represent upstream dependencies
+                    parent_id = span.get("parent_span_id")
+                    if parent_id:
+                        for other_span in detailed_trace.get("spans", []):
+                            if other_span.get("span_id") == parent_id:
+                                upstream_service = other_span.get("attributes", {}).get("service.name", "unknown")
+                                if upstream_service != service and upstream_service != "unknown":
+                                    if upstream_service not in dependencies["upstream"]:
+                                        dependencies["upstream"][upstream_service] = {
+                                            "count": 0,
+                                            "errors": 0
+                                        }
+                                    dependencies["upstream"][upstream_service]["count"] += 1
                     
-                    dep = dependencies["downstream"][downstream_service]
-                    dep["count"] += 1
-                    if span.get("tags", {}).get("error", False):
-                        dep["errors"] += 1
-                    
-                    latency = span.get("durationNanos", 0) / 1e6
-                    dep["latencies"].append(latency)
-                    dep["avg_latency"] = sum(dep["latencies"]) / len(dep["latencies"])
+                    # Look for child spans that represent downstream dependencies
+                    span_id = span.get("span_id")
+                    for other_span in detailed_trace.get("spans", []):
+                        if other_span.get("parent_span_id") == span_id:
+                            downstream_service = other_span.get("attributes", {}).get("service.name", "unknown")
+                            if downstream_service != service and downstream_service != "unknown":
+                                if downstream_service not in dependencies["downstream"]:
+                                    dependencies["downstream"][downstream_service] = {
+                                        "count": 0,
+                                        "errors": 0
+                                    }
+                                dependencies["downstream"][downstream_service]["count"] += 1
+                                
+                                # Check for errors in the downstream service
+                                if other_span.get("attributes", {}).get("error") == "true":
+                                    dependencies["downstream"][downstream_service]["errors"] += 1
         
         return dependencies
 
+    @tool("Analyze error patterns in traces")
     def get_error_analysis(self, service, start=None, end=None, limit=100):
         """
         Analyze error patterns in traces
@@ -445,225 +437,155 @@ class TempoTraceTool(AgentTool):
         Returns:
             dict: Error analysis results
         """
-        traces = self.execute(service=service, start=start, end=end, limit=limit)
+        # Get traces with error tag
+        traces = self.query_traces(service=service, tags={"error": "true"}, start=start, end=end, limit=limit)
         
         errors = {
-            "total_traces": 0,
-            "error_traces": 0,
+            "total_error_traces": traces.get("trace_count", 0),
             "error_operations": {},
-            "error_causes": {},
-            "error_services": {}
+            "error_messages": {},
+            "error_types": {}
         }
         
+        # Also get total traces to calculate error rate
+        all_traces = self.query_traces(service=service, start=start, end=end, limit=limit)
+        errors["total_traces"] = all_traces.get("trace_count", 0)
+        
+        # Calculate error rate
+        if errors["total_traces"] > 0:
+            errors["error_rate"] = errors["total_error_traces"] / errors["total_traces"]
+        else:
+            errors["error_rate"] = 0
+        
+        # Analyze each error trace in detail
         for trace in traces.get("traces", []):
-            errors["total_traces"] += 1
-            has_error = False
+            trace_id = trace.get("trace_id")
+            if not trace_id:
+                continue
+                
+            # Get detailed trace information
+            detailed_trace = self.get_trace_by_id(trace_id)
             
-            for span in trace.get("spans", []):
-                if span.get("tags", {}).get("error", False):
-                    has_error = True
+            # Skip if there was an error getting the trace
+            if "error" in detailed_trace:
+                continue
+            
+            # Look for error spans
+            for span in detailed_trace.get("spans", []):
+                if span.get("attributes", {}).get("error") == "true":
+                    # Only count errors from the service we're analyzing
+                    span_service = span.get("attributes", {}).get("service.name", "unknown")
+                    if span_service != service:
+                        continue
                     
-                    # Track error by operation
-                    operation = span.get("operationName", "unknown")
+                    # Track errors by operation
+                    operation = span.get("name", "unknown")
                     if operation not in errors["error_operations"]:
                         errors["error_operations"][operation] = 0
                     errors["error_operations"][operation] += 1
                     
-                    # Track error by service
-                    service_name = span.get("serviceName", "unknown")
-                    if service_name not in errors["error_services"]:
-                        errors["error_services"][service_name] = 0
-                    errors["error_services"][service_name] += 1
+                    # Track error messages
+                    error_message = span.get("attributes", {}).get("error.message", "Unknown error")
+                    if error_message not in errors["error_messages"]:
+                        errors["error_messages"][error_message] = 0
+                    errors["error_messages"][error_message] += 1
                     
-                    # Track error causes
-                    error_message = span.get("tags", {}).get("error.message", "unknown")
-                    if error_message not in errors["error_causes"]:
-                        errors["error_causes"][error_message] = 0
-                    errors["error_causes"][error_message] += 1
-            
-            if has_error:
-                errors["error_traces"] += 1
+                    # Track error types
+                    error_type = span.get("attributes", {}).get("error.type", "Unknown")
+                    if error_type not in errors["error_types"]:
+                        errors["error_types"][error_type] = 0
+                    errors["error_types"][error_type] += 1
         
-        # Calculate error rates
-        if errors["total_traces"] > 0:
-            errors["error_rate"] = errors["error_traces"] / errors["total_traces"]
-        else:
-            errors["error_rate"] = 0
-            
         return errors
 
-class TempoServiceTool(AgentTool):
-    """Tool for analyzing service performance using Tempo"""
-    
-    def __init__(self, tempo_url=None):
+    @tool("Analyze comprehensive service performance")
+    def analyze_service_performance(self, service, start=None, end=None, limit=100):
         """
-        Initialize Tempo client
-        
-        Args:
-            tempo_url (str, optional): Tempo API URL
-        """
-        self.tempo_url = tempo_url or os.environ.get('TEMPO_URL')
-        
-        if not self.tempo_url:
-            logger.warning("Tempo URL not provided, using default: http://tempo:3100")
-            self.tempo_url = "http://tempo:3100"
-    
-    @property
-    def name(self):
-        return "tempo_service_analysis"
-    
-    @property
-    def description(self):
-        return "Analyze service performance using Tempo distributed tracing data"
-    
-    def execute(self, service, start=None, end=None, limit=100):
-        """
-        Analyze service performance using Tempo
+        Perform a comprehensive analysis of service performance
         
         Args:
             service (str): Service name to analyze
-            start (str, optional): Start time in ISO format (e.g., "2023-01-01T00:00:00Z")
-            end (str, optional): End time in ISO format (e.g., "2023-01-01T01:00:00Z")
+            start (str, optional): Start time in ISO format
+            end (str, optional): End time in ISO format
             limit (int, optional): Maximum number of traces to analyze
             
         Returns:
-            dict: Service performance analysis
+            dict: Comprehensive service performance analysis
         """
-        try:
-            # Set time range
-            if not start:
-                # Default to last hour if not specified
-                start_time = datetime.utcnow() - timedelta(hours=1)
-                start = start_time.isoformat() + "Z"
-                
-            if not end:
-                end_time = datetime.utcnow()
-                end = end_time.isoformat() + "Z"
-            
-            # Query traces for the service
-            query_params = {
-                "service": service,
+        # Get basic trace data
+        traces_data = self.query_traces(service=service, start=start, end=end, limit=limit)
+        
+        # Get latency analysis
+        latency_data = self.get_service_latency_analysis(service=service, start=start, end=end, limit=limit)
+        
+        # Get error analysis
+        error_data = self.get_error_analysis(service=service, start=start, end=end, limit=limit)
+        
+        # Get dependency analysis
+        dependency_data = self.get_service_dependencies(service=service, start=start, end=end, limit=limit)
+        
+        # Combine all data into a comprehensive analysis
+        result = {
+            "service": service,
+            "trace_count": traces_data.get("trace_count", 0),
+            "time_range": {
                 "start": start,
-                "end": end,
-                "limit": str(limit)
+                "end": end
             }
-            
-            # Make the API request to Tempo
-            url = urljoin(self.tempo_url, "/api/search")
-            response = requests.get(url, params=query_params)
-            response.raise_for_status()
-            
-            traces = response.json().get("traces", [])
-            
-            # Initialize result structure
-            result = {
-                "service": service,
-                "time_range": {
-                    "start": start,
-                    "end": end
-                },
-                "trace_count": len(traces),
-                "operations": {},
-                "error_count": 0,
-                "avg_duration_ms": 0,
-                "p95_duration_ms": 0,
-                "max_duration_ms": 0,
-                "issues": []
-            }
-            
-            # Process traces to get detailed information
-            durations = []
-            operation_durations = {}
-            
-            for trace in traces:
-                duration_ms = trace.get("durationMs", 0)
-                durations.append(duration_ms)
-                
-                # Get the trace details to check for errors and analyze operations
-                trace_id = trace.get("traceID")
-                trace_details_url = urljoin(self.tempo_url, f"/api/traces/{trace_id}")
-                trace_response = requests.get(trace_details_url)
-                
-                if trace_response.status_code == 200:
-                    trace_data = trace_response.json()
-                    
-                    for batch in trace_data.get("batches", []):
-                        for span in batch.get("spans", []):
-                            # Check if this span belongs to our service
-                            service_found = False
-                            for resource in batch.get("resource", {}).get("attributes", []):
-                                if resource.get("key") == "service.name" and resource.get("value", {}).get("stringValue") == service:
-                                    service_found = True
-                                    break
-                            
-                            if not service_found:
-                                continue
-                            
-                            # Extract span information
-                            span_name = span.get("name", "unknown")
-                            
-                            # Calculate span duration
-                            span_duration_ms = 0
-                            if span.get("startTimeUnixNano") and span.get("endTimeUnixNano"):
-                                span_duration_ms = (int(span.get("endTimeUnixNano", 0)) - int(span.get("startTimeUnixNano", 0))) / 1_000_000
-                            
-                            # Track operation durations
-                            if span_name not in operation_durations:
-                                operation_durations[span_name] = []
-                            operation_durations[span_name].append(span_duration_ms)
-                            
-                            # Check for errors
-                            for attr in span.get("attributes", []):
-                                if attr.get("key") == "error" and attr.get("value", {}).get("boolValue", False):
-                                    result["error_count"] += 1
-                                    
-                                    # Extract error details
-                                    error_message = "Unknown error"
-                                    for error_attr in span.get("attributes", []):
-                                        if error_attr.get("key") == "error.message":
-                                            error_message = error_attr.get("value", {}).get("stringValue", "Unknown error")
-                                    
-                                    result["issues"].append({
-                                        "type": "error",
-                                        "trace_id": trace_id,
-                                        "span_id": span.get("spanId"),
-                                        "operation": span_name,
-                                        "error_message": error_message,
-                                        "timestamp": datetime.fromtimestamp(int(span.get("startTimeUnixNano", 0)) / 1_000_000_000).isoformat() if span.get("startTimeUnixNano") else None
-                                    })
-            
-            # Calculate overall statistics
-            if durations:
-                result["avg_duration_ms"] = sum(durations) / len(durations)
-                result["max_duration_ms"] = max(durations)
-                durations.sort()
-                result["p95_duration_ms"] = durations[int(len(durations) * 0.95)] if len(durations) >= 20 else durations[-1]
-            
-            # Calculate per-operation statistics
-            for operation, op_durations in operation_durations.items():
-                if op_durations:
-                    op_durations.sort()
-                    operation_info = {
-                        "count": len(op_durations),
-                        "avg_duration_ms": sum(op_durations) / len(op_durations),
-                        "max_duration_ms": max(op_durations),
-                        "p95_duration_ms": op_durations[int(len(op_durations) * 0.95)] if len(op_durations) >= 20 else op_durations[-1]
-                    }
-                    
-                    # Identify slow operations (p95 > 500ms)
-                    if operation_info["p95_duration_ms"] > 500:
-                        result["issues"].append({
-                            "type": "slow_operation",
-                            "operation": operation,
-                            "p95_duration_ms": operation_info["p95_duration_ms"],
-                            "avg_duration_ms": operation_info["avg_duration_ms"],
-                            "count": operation_info["count"]
-                        })
-                    
-                    result["operations"][operation] = operation_info
-            
-            return result
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error analyzing service performance: {str(e)}")
-            return {"error": str(e), "status_code": getattr(e.response, "status_code", None) if hasattr(e, "response") else None}
+        }
+        
+        # Add performance metrics
+        if "statistics" in traces_data:
+            result["avg_duration_ms"] = traces_data["statistics"].get("avg_duration_ms", 0)
+            result["p95_duration_ms"] = traces_data["statistics"].get("p95_duration_ms", 0)
+            result["p99_duration_ms"] = traces_data["statistics"].get("p99_duration_ms", 0)
+            result["max_duration_ms"] = traces_data["statistics"].get("max_duration_ms", 0)
+        
+        # Add error information
+        result["error_count"] = error_data.get("total_error_traces", 0)
+        result["error_rate"] = error_data.get("error_rate", 0)
+        result["error_messages"] = error_data.get("error_messages", {})
+        
+        # Add operation-specific performance
+        result["operations"] = latency_data.get("operations", {})
+        
+        # Add dependency information
+        result["dependencies"] = dependency_data
+        
+        # Identify potential issues
+        result["issues"] = []
+        
+        # Check for high error rate
+        if result["error_rate"] > 0.05:  # 5% error rate threshold
+            result["issues"].append({
+                "type": "high_error_rate",
+                "message": f"High error rate of {result['error_rate']*100:.1f}%",
+                "severity": "high"
+            })
+        
+        # Check for slow operations
+        for op_name, op_data in result["operations"].items():
+            if op_data.get("avg", 0) > 500:  # 500ms threshold
+                result["issues"].append({
+                    "type": "slow_operation",
+                    "operation": op_name,
+                    "avg_duration": op_data["avg"],
+                    "message": f"Slow operation {op_name} with average duration {op_data['avg']}ms",
+                    "severity": "medium"
+                })
+        
+        # Check for problematic dependencies
+        for dep_type in ["upstream", "downstream"]:
+            for dep_name, dep_data in result["dependencies"].get(dep_type, {}).items():
+                error_rate = dep_data.get("errors", 0) / dep_data.get("count", 1)
+                if error_rate > 0.05:  # 5% error rate threshold
+                    result["issues"].append({
+                        "type": "dependency_errors",
+                        "dependency_type": dep_type,
+                        "dependency": dep_name,
+                        "error_rate": error_rate,
+                        "message": f"{dep_type.capitalize()} dependency {dep_name} has {error_rate*100:.1f}% error rate",
+                        "severity": "high"
+                    })
+        
+        return result

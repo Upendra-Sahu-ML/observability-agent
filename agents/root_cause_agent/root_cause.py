@@ -6,9 +6,10 @@ import nats
 from nats.js.api import ConsumerConfig, DeliverPolicy
 from datetime import datetime
 from crewai import Agent, Task, Crew
-from langchain_openai import ChatOpenAI
-from langchain.tools import BaseTool, StructuredTool, tool
+from crewai.llm import LLM
+from crewai.tools import tool
 from dotenv import load_dotenv
+from common.tools.root_cause_tools import correlation_analysis, dependency_analysis
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,17 +30,16 @@ class RootCauseAgent:
             logger.warning("OPENAI_API_KEY environment variable not set")
         
         # Initialize OpenAI model
-        self.llm = ChatOpenAI(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
+        self.llm = LLM(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
         
         # Create a crewAI agent for root cause analysis
-        # Using empty list for tools since this agent doesn't use external tools
         self.root_cause_analyzer = Agent(
-            role="Root Cause Analyst",
-            goal="Analyze all available data to determine the root cause of incidents",
-            backstory="You are an expert at determining the root cause of complex incidents by synthesizing data from various sources.",
+            role="Root Cause Analyzer",
+            goal="Identify the root cause of system issues by analyzing correlations and dependencies",
+            backstory="You are an expert at analyzing system issues and identifying their root causes by examining correlations between events and service dependencies.",
             verbose=True,
             llm=self.llm,
-            tools=[] # Pass empty list to avoid the KeyError
+            tools=[correlation_analysis, dependency_analysis]
         )
     
     async def connect(self):

@@ -9,14 +9,10 @@ import nats
 from nats.js.api import ConsumerConfig, DeliverPolicy
 from datetime import datetime
 from crewai import Agent, Task, Crew
-from langchain_openai import ChatOpenAI
-from langchain.tools import BaseTool, StructuredTool, tool
+from crewai.llm import LLM
+from crewai.tools import tool
 from dotenv import load_dotenv
-from common.tools.tempo_tools import (
-    TempoQueryTool,
-    TempoTraceSearchTool,
-    TempoServicePerformanceTool
-)
+from common.tools.tempo_tools import TempoTools
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,13 +21,13 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class TracingAgent:
-    def __init__(self, tempo_url="http://tempo:3100", nats_server="nats://nats:4222"):
+    def __init__(self, tempo_url="http://tempo:3200", nats_server="nats://nats:4222"):
         # NATS connection parameters
         self.nats_server = nats_server
         self.nats_client = None
         self.js = None  # JetStream context
         
-        # Tempo URL
+        # Tracing configuration
         self.tempo_url = tempo_url
         
         # OpenAI API key from environment
@@ -40,28 +36,27 @@ class TracingAgent:
             logger.warning("OPENAI_API_KEY environment variable not set")
         
         # Initialize OpenAI model
-        self.llm = ChatOpenAI(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
+        self.llm = LLM(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
         
-        # Initialize Tempo tools
-        self.query_tool = TempoQueryTool(tempo_url=self.tempo_url)
-        self.trace_search_tool = TempoTraceSearchTool(tempo_url=self.tempo_url)
-        self.performance_tool = TempoServicePerformanceTool(tempo_url=self.tempo_url)
-        
-        # Convert functions to proper LangChain tools
-        self.langchain_tools = [
-            StructuredTool.from_function(self.query_tool.execute),
-            StructuredTool.from_function(self.trace_search_tool.execute),
-            StructuredTool.from_function(self.performance_tool.execute)
-        ]
+        # Initialize tracing tools
+        self.tempo_tools = TempoTools(tempo_url=self.tempo_url)
         
         # Create a crewAI agent for trace analysis
         self.trace_analyzer = Agent(
-            role="Tracing Analyst",
-            goal="Analyze distributed traces to identify performance bottlenecks and errors",
-            backstory="You are an expert at analyzing distributed traces and identifying issues in service communication and performance.",
+            role="Trace Analyzer",
+            goal="Analyze distributed traces to identify performance issues and bottlenecks",
+            backstory="You are an expert at analyzing distributed traces and identifying performance bottlenecks in microservice architectures.",
             verbose=True,
             llm=self.llm,
-            tools=self.langchain_tools
+            tools=[
+                # Tempo tools for distributed tracing
+                self.tempo_tools.query_traces,
+                self.tempo_tools.get_trace_by_id,
+                self.tempo_tools.get_service_latency_analysis,
+                self.tempo_tools.get_service_dependencies,
+                self.tempo_tools.get_error_analysis,
+                self.tempo_tools.analyze_service_performance
+            ]
         )
     
     async def connect(self):
@@ -90,10 +85,25 @@ class TracingAgent:
                 if "AGENT_TASKS" not in stream_names:
                     await self.js.add_stream(
                         name="AGENT_TASKS", 
-                        subjects=["tracing_agent"]
+                        subjects=["agent.>", "tracing_agent"]
                     )
                     logger.info("Created AGENT_TASKS stream")
                 else:
+                    # Update the stream to ensure it includes our subject
+                    try:
+                        stream_info = await self.js.stream_info("AGENT_TASKS")
+                        current_subjects = stream_info.config.subjects
+                        
+                        if "tracing_agent" not in current_subjects:
+                            # Add our subject to the existing list
+                            new_subjects = current_subjects + ["tracing_agent"]
+                            await self.js.update_stream(
+                                config={"name": "AGENT_TASKS", "subjects": new_subjects}
+                            )
+                            logger.info("Updated AGENT_TASKS stream to include tracing_agent subject")
+                    except Exception as e:
+                        logger.warning(f"Failed to update AGENT_TASKS stream: {str(e)}")
+                        
                     logger.info("AGENT_TASKS stream already exists")
                 
                 # Only create RESPONSES stream if it doesn't already exist

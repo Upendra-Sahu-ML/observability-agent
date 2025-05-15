@@ -6,14 +6,12 @@ import nats
 from nats.js.api import ConsumerConfig, DeliverPolicy
 from datetime import datetime
 from crewai import Agent, Task, Crew
-from langchain_openai import ChatOpenAI
-from langchain.tools import BaseTool, StructuredTool, tool
+from crewai.llm import LLM
+from crewai.tools import tool
 from dotenv import load_dotenv
-from common.tools.prometheus_tools import (
+from common.tools.metric_tools import (
     PrometheusQueryTool,
-    PrometheusRangeQueryTool,
-    PrometheusMetricsTool,
-    PrometheusTargetsTool
+    MetricAnalysisTool
 )
 
 # Configure logging
@@ -29,7 +27,7 @@ class MetricAgent:
         self.nats_client = None
         self.js = None  # JetStream context
         
-        # Prometheus URL
+        # Prometheus configuration
         self.prometheus_url = prometheus_url
         
         # OpenAI API key from environment
@@ -38,30 +36,33 @@ class MetricAgent:
             logger.warning("OPENAI_API_KEY environment variable not set")
         
         # Initialize OpenAI model
-        self.llm = ChatOpenAI(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
+        self.llm = LLM(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
         
-        # Initialize Prometheus tools
-        self.query_tool = PrometheusQueryTool(prometheus_url=self.prometheus_url)
-        self.range_query_tool = PrometheusRangeQueryTool(prometheus_url=self.prometheus_url)
-        self.metrics_tool = PrometheusMetricsTool(prometheus_url=self.prometheus_url)
-        self.targets_tool = PrometheusTargetsTool(prometheus_url=self.prometheus_url)
-        
-        # Convert functions to proper LangChain tools
-        self.langchain_tools = [
-            StructuredTool.from_function(self.query_tool.execute),
-            StructuredTool.from_function(self.range_query_tool.execute),
-            StructuredTool.from_function(self.metrics_tool.execute),
-            StructuredTool.from_function(self.targets_tool.execute)
-        ]
+        # Initialize metric tools
+        self.prometheus_tool = PrometheusQueryTool(prometheus_url=self.prometheus_url)
+        self.metric_analysis_tool = MetricAnalysisTool()
         
         # Create a crewAI agent for metric analysis
         self.metric_analyzer = Agent(
             role="Metric Analyzer",
-            goal="Analyze metric data to identify anomalies and patterns",
-            backstory="You are an expert at analyzing time-series metrics and identifying anomalies that could indicate system issues.",
+            goal="Analyze metric data to identify patterns and anomalies",
+            backstory="You are an expert at analyzing system metrics and identifying patterns that could indicate system issues.",
             verbose=True,
             llm=self.llm,
-            tools=self.langchain_tools
+            tools=[
+                # Prometheus query tools
+                self.prometheus_tool.query_metrics,
+                self.prometheus_tool.get_cpu_metrics,
+                self.prometheus_tool.get_memory_metrics,
+                self.prometheus_tool.get_error_rate,
+                self.prometheus_tool.get_service_health,
+                
+                # Metric analysis tools
+                self.metric_analysis_tool.analyze_trend,
+                self.metric_analysis_tool.analyze_anomalies,
+                self.metric_analysis_tool.analyze_threshold,
+                self.metric_analysis_tool.analyze_metrics
+            ]
         )
     
     async def connect(self):

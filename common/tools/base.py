@@ -1,24 +1,6 @@
 """
-Base class for all agent tools
+Base definitions for tool implementations using crewAI's modern tool pattern
 """
-from abc import ABC, abstractmethod
+from crewai.tools import tool
 
-class AgentTool(ABC):
-    """Abstract base class for all agent tools"""
-    
-    @abstractmethod
-    def execute(self, *args, **kwargs):
-        """Execute the tool functionality"""
-        pass
-    
-    @property
-    @abstractmethod
-    def name(self):
-        """Return the name of the tool"""
-        pass
-    
-    @property
-    @abstractmethod
-    def description(self):
-        """Return a description of what the tool does"""
-        pass
+# No need for a base class anymore as we're using function-based tools with decorators

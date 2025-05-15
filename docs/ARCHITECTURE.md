@@ -39,7 +39,6 @@ subgraph "Notification Channels"
     E1[Slack]
     E2[PagerDuty]
     E3[Webex]
-    E4[Email]
 end
 
 subgraph "Communication Layer"
@@ -82,32 +81,106 @@ C <-->|Durable Subscriptions| F1
 - Configurable message retention
 - Acknowledgment-based flow control
 
+## Tool Integrations
+
+The system uses the CrewAI framework with tool decorators for agent functionality:
+
+```python
+from crewai.tools import tool
+
+@tool("Analyze correlations between system components and events")
+def correlation_analysis(events, time_window="1h", correlation_threshold=0.7):
+    # Implementation of correlation analysis
+    return {
+        "correlations": {...},
+        "time_window": time_window,
+        "threshold": correlation_threshold
+    }
+```
+
+This approach allows agents to focus on their specific domain while maintaining a consistent API.
+
 ## Data Flow
 
-1. **Alert Ingestion**
-   ```
-   Monitoring System -> NATS -> Orchestrator
-   ```
+### 1. Alert Ingestion
+```
+Monitoring System -> NATS (alert_stream) -> Orchestrator
+```
 
-2. **Analysis Distribution**
-   ```
-   Orchestrator -> NATS -> Specialized Agents
-   ```
+### 2. Analysis Distribution
+```
+Orchestrator -> NATS (agent_tasks) -> Specialized Agents
+```
 
-3. **Response Collection**
-   ```
-   Specialized Agents -> NATS -> Orchestrator
-   ```
+### 3. Response Collection
+```
+Specialized Agents -> NATS (orchestrator_response) -> Orchestrator
+```
 
-4. **Knowledge Integration**
-   ```
-   Orchestrator -> Qdrant -> Knowledge Base
-   ```
+### 4. Knowledge Integration
+```
+Orchestrator -> Qdrant -> Knowledge Base
+```
 
-5. **Notification Dispatch**
-   ```
-   Orchestrator -> NATS -> Notification Agent -> Channels
-   ```
+### 5. Notification Dispatch
+```
+Orchestrator -> NATS (notification_requests) -> Notification Agent -> Channels
+```
+
+## Example Message Flow with NATS
+
+### 1. Alert Received
+```json
+{
+  "subject": "alert_stream",
+  "data": {
+    "alert_id": "cpu-spike-123",
+    "labels": {
+      "alertname": "HighCPUUsage",
+      "service": "payment-service",
+      "severity": "critical"
+    },
+    "annotations": {
+      "description": "CPU usage above 90% for 5 minutes",
+      "dashboard": "https://grafana.example.com/d/abc123"
+    },
+    "startsAt": "2025-05-10T10:00:00Z"
+  }
+}
+```
+
+### 2. Agent Task Distribution
+```json
+{
+  "subject": "metric_agent",
+  "data": {
+    "alert_id": "cpu-spike-123",
+    "labels": {
+      "alertname": "HighCPUUsage",
+      "service": "payment-service",
+      "severity": "critical"
+    },
+    "annotations": {
+      "description": "CPU usage above 90% for 5 minutes"
+    },
+    "startsAt": "2025-05-10T10:00:00Z"
+  }
+}
+```
+
+### 3. Agent Response
+```json
+{
+  "subject": "orchestrator_response",
+  "data": {
+    "agent": "metric",
+    "alert_id": "cpu-spike-123",
+    "observed": "CPU utilization issue",
+    "analysis": "CPU usage shows consistent spikes correlating with increased traffic...",
+    "timestamp": "2025-05-10T10:05:00Z"
+  }
+}
+```
 
 ## Use Cases
 
@@ -119,23 +192,54 @@ C <-->|Durable Subscriptions| F1
    ```json
    {
      "alert_id": "cpu-spike-123",
-     "service": "payment-service",
-     "metric": "cpu_usage",
-     "value": "95%",
-     "threshold": "80%",
-     "timestamp": "2024-03-20T10:00:00Z"
+     "labels": {
+       "alertname": "HighCPUUsage",
+       "service": "payment-service",
+       "severity": "critical"
+     },
+     "annotations": {
+       "description": "CPU usage above 90% for 5 minutes"
+     },
+     "startsAt": "2025-05-10T10:00:00Z"
    }
    ```
 
-2. **Agent Analysis**
-   - **Metric Agent**: Confirms CPU spike pattern
-   - **Log Agent**: Identifies related error logs
-   - **Deployment Agent**: Checks recent deployments
-   - **Tracing Agent**: Analyzes request patterns
+2. **Orchestrator Processing**
+   - Alert is distributed to specialized agents via NATS
+   - Tasks are created for Metric, Log, Deployment, and Tracing agents
 
-3. **Root Cause Analysis**
+3. **Agent Analysis**
+   - **Metric Agent**: Confirms CPU spike pattern
+     ```json
+     {
+       "agent": "metric",
+       "observed": "CPU utilization issue",
+       "analysis": "CPU usage shows consistent spikes every 5 minutes"
+     }
+     ```
+   - **Log Agent**: Identifies related error logs
+     ```json
+     {
+       "agent": "log",
+       "observed": "OOM errors",
+       "analysis": "Multiple instances of OutOfMemoryError in payment processing"
+     }
+     ```
+   - **Deployment Agent**: Checks recent deployments
+     ```json
+     {
+       "agent": "deployment",
+       "observed": "Recent deployment",
+       "analysis": "New version deployed 30 minutes before incident"
+     }
+     ```
+
+4. **Root Cause Analysis**
+   - Orchestrator sends comprehensive data to Root Cause Agent
+   - Root Cause Agent uses correlation_analysis tool to identify patterns
    ```json
    {
+     "agent": "root_cause",
      "root_cause": "Memory leak in payment processing module",
      "confidence": 0.95,
      "evidence": [
@@ -146,50 +250,55 @@ C <-->|Durable Subscriptions| F1
    }
    ```
 
-4. **Response Actions**
-   - **Runbook Agent**: Executes CPU spike mitigation
-   - **Notification Agent**: Alerts on-call team
-   - **Postmortem Agent**: Generates incident report
+5. **Response Actions**
+   - **Notification Agent**: Alerts on-call team via Slack, PagerDuty, and Webex
+   - **Runbook Agent**: Executes CPU spike mitigation runbook
+   - **Postmortem Agent**: Generates incident report with Root Cause details
 
-### 2. Service Degradation
+### 2. Multi-Alert Correlation
 
-**Scenario**: API response times increase significantly.
+**Scenario**: Multiple related alerts fire within a short time window.
 
-1. **Alert Reception**
+1. **Alerts Reception**
    ```json
-   {
-     "alert_id": "latency-spike-456",
-     "service": "api-gateway",
-     "metric": "p95_latency",
-     "value": "2.5s",
-     "threshold": "1s",
-     "timestamp": "2024-03-20T11:00:00Z"
-   }
+   [
+     {
+       "alert_id": "api-latency-001",
+       "labels": {
+         "alertname": "HighApiLatency",
+         "service": "api-gateway",
+         "severity": "warning"
+       }
+     },
+     {
+       "alert_id": "db-connections-002",
+       "labels": {
+         "alertname": "HighDbConnections",
+         "service": "database",
+         "severity": "warning"
+       }
+     },
+     {
+       "alert_id": "cache-miss-003",
+       "labels": {
+         "alertname": "HighCacheMissRate",
+         "service": "redis-cache",
+         "severity": "warning"
+       }
+     }
+   ]
    ```
 
-2. **Agent Analysis**
-   - **Metric Agent**: Analyzes latency patterns
-   - **Log Agent**: Checks for error rates
-   - **Tracing Agent**: Identifies slow endpoints
-   - **Deployment Agent**: Reviews recent changes
+2. **Root Cause Correlation**
+   - Root Cause Agent uses correlation_analysis tool with time_window="10m"
+   - Identifies that database connection issues are the primary cause
+   - Determines that cache misses and API latency are secondary effects
 
-3. **Root Cause Analysis**
-   ```json
-   {
-     "root_cause": "Database connection pool exhaustion",
-     "confidence": 0.90,
-     "evidence": [
-       "High number of pending database connections",
-       "Increased error rates in database queries",
-       "Recent traffic spike"
-     ]
-   }
-   ```
-
-4. **Response Actions**
-   - **Runbook Agent**: Executes connection pool reset
-   - **Notification Agent**: Notifies database team
-   - **Postmortem Agent**: Documents incident
+3. **Unified Response**
+   - Single incident created for all related alerts
+   - Notifications include correlation information
+   - Runbook executed for database connection pool remediation
+   - Comprehensive postmortem addresses all related symptoms
 
 ## Deployment Architecture
 
@@ -208,71 +317,90 @@ graph TD
     C -->|Uses| D
 ```
 
-### Resource Requirements
+### NATS Streams Configuration
 
-1. **Orchestrator**
-   - CPU: 100m-500m
-   - Memory: 256Mi-512Mi
+Each agent uses dedicated NATS streams and durable consumers:
 
-2. **Specialized Agents**
-   - CPU: 100m-200m each
-   - Memory: 128Mi-256Mi each
-
-3. **Qdrant**
-   - CPU: 200m-500m
-   - Memory: 256Mi-512Mi
-   - Storage: 10Gi-20Gi
-
-4. **NATS**
-   - CPU: 100m-200m
-   - Memory: 128Mi-256Mi
+```yaml
+streams:
+  - name: ALERTS
+    subjects: ["alert_stream"]
+    retention: limits
+    max_age: 24h
+  - name: AGENT_TASKS
+    subjects: ["metric_agent", "log_agent", "deployment_agent", "tracing_agent", 
+               "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent"]
+    retention: limits
+    max_msgs: 10000
+  - name: RESPONSES
+    subjects: ["orchestrator_response"]
+    retention: limits
+    max_msgs: 10000
+```
 
 ## Security Considerations
 
 1. **Authentication**
-   - API key management
-   - Service account permissions
-   - NATS authentication
+   - NATS authentication with user credentials
+   - Service account permissions for Kubernetes
+   - API key management for external systems
 
 2. **Authorization**
+   - NATS subject-based permissions
    - Role-based access control
-   - Agent permissions
-   - API access control
+   - Agent-specific permissions
 
 3. **Data Protection**
-   - Encrypted communication
-   - Secure storage
-   - Audit logging
+   - TLS for NATS connections
+   - Encrypted sensitive data in messages
+   - Secure storage in Qdrant
+
+## Performance Considerations
+
+1. **Message Throughput**
+   - NATS can handle millions of messages per second
+   - JetStream provides persistence with minimal overhead
+   - Queue groups enable load balancing across agent replicas
+
+2. **Scalability**
+   - Horizontal scaling of agent deployments
+   - Independent scaling based on workload
+   - NATS cluster for high availability
+
+3. **Resource Efficiency**
+   - NATS has a small footprint (10-20MB per instance)
+   - Efficient message routing reduces network overhead
+   - JetStream optimizes storage for persistence
 
 ## Monitoring and Maintenance
 
 1. **System Health**
-   - Agent status monitoring
-   - Resource utilization
-   - Error rates
+   - NATS server monitoring
+   - Agent liveness/readiness probes
+   - Message queue length monitoring
 
 2. **Performance Metrics**
    - Alert processing time
    - Agent response time
-   - Knowledge base operations
+   - JetStream persistence metrics
 
 3. **Maintenance Tasks**
-   - Regular backups
-   - Log rotation
-   - Knowledge base cleanup
+   - NATS stream pruning
+   - Qdrant vector database optimization
+   - Agent version upgrades
 
 ## Future Enhancements
 
 1. **Planned Features**
-   - Multi-cluster support
-   - Advanced ML models
-   - Extended agent capabilities
+   - Enhanced multi-alert correlation
+   - Predictive incident detection
+   - Automated remediation actions
 
 2. **Integration Roadmap**
    - Additional monitoring systems
-   - New notification channels
-   - Enhanced analytics
+   - More notification channels
+   - Advanced ML-based root cause analysis
 
 ## Conclusion
 
-The Observability Agent System provides a comprehensive solution for incident detection, analysis, and response. Its distributed architecture and specialized agents enable deep insights into system behavior, while the knowledge base ensures continuous learning and improvement of incident response capabilities.
+The Observability Agent System provides a comprehensive solution for incident detection, analysis, and response. Its architecture based on specialized agents, NATS messaging, and vector knowledge storage enables deep insights into system behavior while maintaining high performance and reliability.

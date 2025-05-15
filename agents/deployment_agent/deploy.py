@@ -5,15 +5,15 @@ import asyncio
 import nats
 from nats.js.api import ConsumerConfig, DeliverPolicy
 from datetime import datetime
+from typing import Any, Dict
 from crewai import Agent, Task, Crew
-from langchain_openai import ChatOpenAI
-from langchain.tools import BaseTool, StructuredTool, tool
+from crewai.llm import LLM
+from crewai.tools import tool
 from dotenv import load_dotenv
-from common.tools.deployment_tools import (
-    GitChangeTool,
-    ArgoCDTool,
-    KubeDeploymentTool
-)
+from common.tools.git_tools import GitTools
+from common.tools.argocd_tools import ArgoCDTools
+from common.tools.kube_tools import KubernetesTools
+from common.tools.deployment_tools import DeploymentTools
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -39,71 +39,59 @@ class DeploymentAgent:
             logger.warning("OPENAI_API_KEY environment variable not set")
         
         # Initialize OpenAI model
-        self.llm = ChatOpenAI(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
+        self.llm = LLM(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
         
         # Initialize deployment tools
-        # GitChangeTool doesn't accept constructor parameters, it takes them in execute()
-        self.git_tool = GitChangeTool()
+        self.git_tool = GitTools()
+        self.argocd_tool = ArgoCDTools(argocd_api_url=self.argocd_server)
+        self.kube_tool = KubernetesTools()
+        self.deployment_status_tool = DeploymentTools()
         
-        # Make sure ArgoCD tool has proper configuration
-        try:
-            # Fix: Use argocd_server parameter name instead of server
-            self.argocd_tool = ArgoCDTool(argocd_server=self.argocd_server)
-        except ValueError as e:
-            logger.warning(f"Failed to initialize ArgoCD tool: {str(e)}")
-            logger.warning("ArgoCD analysis will be disabled")
-            # Still create the tool to avoid exceptions, but expect errors in usage
-            self.argocd_tool = ArgoCDTool(argocd_server=self.argocd_server, api_token="dummy-token")
-            
-        self.kube_tool = KubeDeploymentTool()
-        
-        # Convert functions to proper LangChain tools
-        self.langchain_tools = [
-            StructuredTool.from_function(
-                self.git_tool_wrapper,
-                name="git_changes",
-                description="Check recent changes in a Git repository"
-            ),
-            StructuredTool.from_function(
-                self.argocd_tool.execute,
-                name="argocd_history",
-                description="Check ArgoCD application deployment history"
-            ),
-            StructuredTool.from_function(
-                self.kube_tool.execute,
-                name="kube_deployment",
-                description="Check Kubernetes deployment status and revision history"
-            )
-        ]
-        
-        # Create a crewAI agent for deployment analysis
-        self.deployment_analyzer = Agent(
-            role="Deployment Analyzer",
-            goal="Analyze deployment configurations and recent changes to identify issues",
-            backstory="You are an expert at analyzing deployment configurations, git changes, and ArgoCD state to identify issues with deployments.",
+        # Create a crewAI agent for deployment management with direct references to tool methods
+        self.deployment_manager = Agent(
+            role="Deployment Manager",
+            goal="Monitor and manage deployments to ensure system stability",
+            backstory="You are an expert at managing deployments and ensuring smooth rollouts while maintaining system stability.",
             verbose=True,
             llm=self.llm,
-            tools=self.langchain_tools
+            tools=[
+                # Git tools for repository analysis
+                self.git_tool.get_recent_commits,
+                self.git_tool.get_commit_diff,
+                self.git_tool.get_file_history,
+                self.git_tool.get_file_at_commit,
+                self.git_tool.get_modified_files,
+                self.git_tool.get_branches,
+                
+                # ArgoCD tools for deployment management
+                self.argocd_tool.get_application,
+                self.argocd_tool.get_application_resource_tree,
+                self.argocd_tool.get_application_events,
+                self.argocd_tool.get_application_sync_status,
+                self.argocd_tool.get_project,
+                self.argocd_tool.sync_application,
+                
+                # Kubernetes tools for cluster analysis
+                self.kube_tool.get_deployments,
+                self.kube_tool.get_pods,
+                self.kube_tool.get_pod_logs,
+                self.kube_tool.get_deployment_events,
+                self.kube_tool.get_service,
+                self.kube_tool.get_pod_metrics,
+                self.kube_tool.get_namespaces,
+                self.kube_tool.get_nodes,
+                
+                # DeploymentTools for deployment analysis
+                self.deployment_status_tool.list_deployments,
+                self.deployment_status_tool.get_deployment_history,
+                self.deployment_status_tool.check_deployment_status,
+                self.deployment_status_tool.analyze_deployment_failures,
+                self.deployment_status_tool.compare_deployments,
+                self.deployment_status_tool.rollback_deployment,
+                self.deployment_status_tool.get_deployment_metrics,
+                self.deployment_status_tool.list_deployment_events
+            ]
         )
-    
-    def git_tool_wrapper(self, branch="main", since=None, author=None, max_commits=10):
-        """
-        Get recent commits from a Git repository
-        
-        Args:
-            branch (str, optional): Branch to check (default: main)
-            since (str, optional): Get commits since this time (e.g., "1 day ago", "2.weeks", "yesterday")
-            author (str, optional): Filter commits by author
-            max_commits (int, optional): Maximum number of commits to retrieve
-            
-        Returns:
-            dict: Recent commit information
-        """
-        return self.git_tool.execute(repo_path=self.git_repo_path, 
-                                     branch=branch, 
-                                     since=since, 
-                                     author=author, 
-                                     max_commits=max_commits)
     
     async def connect(self):
         """Connect to NATS server and set up JetStream"""
@@ -131,10 +119,25 @@ class DeploymentAgent:
                 if "AGENT_TASKS" not in stream_names:
                     await self.js.add_stream(
                         name="AGENT_TASKS", 
-                        subjects=["deployment_agent"]
+                        subjects=["agent.>", "deployment_agent"]
                     )
                     logger.info("Created AGENT_TASKS stream")
                 else:
+                    # Update the stream to ensure it includes our subject
+                    try:
+                        stream_info = await self.js.stream_info("AGENT_TASKS")
+                        current_subjects = stream_info.config.subjects
+                        
+                        if "deployment_agent" not in current_subjects:
+                            # Add our subject to the existing list
+                            new_subjects = current_subjects + ["deployment_agent"]
+                            await self.js.update_stream(
+                                config={"name": "AGENT_TASKS", "subjects": new_subjects}
+                            )
+                            logger.info("Updated AGENT_TASKS stream to include deployment_agent subject")
+                    except Exception as e:
+                        logger.warning(f"Failed to update AGENT_TASKS stream: {str(e)}")
+                        
                     logger.info("AGENT_TASKS stream already exists")
                 
                 # Only create RESPONSES stream if it doesn't already exist
@@ -201,7 +204,7 @@ class DeploymentAgent:
             
             Return a comprehensive analysis of what the deployment data shows, potential causes, and any recommended further investigation.
             """,
-            agent=self.deployment_analyzer,
+            agent=self.deployment_manager,
             expected_output="A detailed analysis of the deployment configuration and status related to the alert"
         )
         
@@ -214,9 +217,9 @@ class DeploymentAgent:
         # Create deployment analysis task
         task = self._create_deployment_analysis_task(alert)
         
-        # Create crew with deployment analyzer
+        # Create crew with deployment manager
         crew = Crew(
-            agents=[self.deployment_analyzer],
+            agents=[self.deployment_manager],
             tasks=[task],
             verbose=True
         )
@@ -285,16 +288,89 @@ class DeploymentAgent:
             ack_wait=60,    # Wait 60 seconds for acknowledgment
         )
         
-        # Subscribe to the stream with the consumer configuration
-        await self.js.subscribe(
-            "deployment_agent",
-            cb=self.message_handler,
-            queue="deployment_processors",
-            config=consumer_config
-        )
-        
-        logger.info("[DeploymentAgent] Subscribed to deployment_agent stream")
-        
-        # Keep the connection alive
-        while True:
-            await asyncio.sleep(3600)  # Sleep for an hour, or until interrupted
+        try:
+            # First check if the AGENT_TASKS stream exists
+            stream_exists = False
+            try:
+                stream_info = await self.js.stream_info("AGENT_TASKS")
+                if "deployment_agent" in stream_info.config.subjects:
+                    stream_exists = True
+                    logger.info("[DeploymentAgent] AGENT_TASKS stream found with deployment_agent subject")
+                else:
+                    # Try to update the stream to include our subject
+                    try:
+                        current_subjects = stream_info.config.subjects
+                        new_subjects = current_subjects + ["deployment_agent"]
+                        await self.js.update_stream(
+                            name="AGENT_TASKS",
+                            subjects=new_subjects
+                        )
+                        stream_exists = True
+                        logger.info("[DeploymentAgent] Updated AGENT_TASKS stream to include deployment_agent subject")
+                    except Exception as e:
+                        logger.warning(f"[DeploymentAgent] Failed to update AGENT_TASKS stream: {str(e)}")
+            except nats.js.errors.NotFoundError:
+                logger.warning("[DeploymentAgent] AGENT_TASKS stream not found, will create it")
+            except Exception as e:
+                logger.warning(f"[DeploymentAgent] Error checking stream: {str(e)}")
+            
+            # If stream doesn't exist or didn't have our subject, create it
+            if not stream_exists:
+                try:
+                    # Create the stream explicitly
+                    await self.js.add_stream(
+                        name="AGENT_TASKS",
+                        subjects=["deployment_agent", "metric_agent", "log_agent", "tracing_agent", 
+                                 "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent"]
+                    )
+                    logger.info("[DeploymentAgent] Created AGENT_TASKS stream")
+                    stream_exists = True
+                except nats.js.errors.BadRequestError as e:
+                    if "already in use" in str(e):
+                        # Stream exists but maybe with different subjects
+                        logger.info("[DeploymentAgent] AGENT_TASKS stream already exists")
+                        stream_exists = True
+                    else:
+                        logger.error(f"[DeploymentAgent] Failed to create AGENT_TASKS stream: {str(e)}")
+                except Exception as e:
+                    logger.error(f"[DeploymentAgent] Failed to create AGENT_TASKS stream: {str(e)}")
+            
+            # Only proceed with subscription if the stream exists
+            if stream_exists:
+                # Subscribe to the stream with the consumer configuration
+                subscription = await self.js.subscribe(
+                    "deployment_agent",
+                    cb=self.message_handler,
+                    queue="deployment_processors",
+                    config=consumer_config
+                )
+                
+                logger.info("[DeploymentAgent] Subscribed to deployment_agent stream")
+                
+                # Keep the connection alive
+                while True:
+                    await asyncio.sleep(3600)  # Sleep for an hour, or until interrupted
+            else:
+                logger.error("[DeploymentAgent] Cannot subscribe: AGENT_TASKS stream not available")
+                # Retry periodically
+                while True:
+                    logger.info("[DeploymentAgent] Will retry stream setup in 30 seconds...")
+                    await asyncio.sleep(30)
+                    # Try calling listen again after delay
+                    return await self.listen()
+                    
+        except nats.js.errors.NotFoundError as e:
+            logger.error(f"[DeploymentAgent] Stream not found error: {str(e)}")
+            # Wait and retry
+            logger.info("[DeploymentAgent] Will retry stream setup in 30 seconds...")
+            await asyncio.sleep(30)
+            # Try calling listen again after delay
+            return await self.listen()
+            
+        except Exception as e:
+            logger.error(f"[DeploymentAgent] Unexpected error in listen(): {str(e)}", exc_info=True)
+            # Wait and retry
+            logger.info("[DeploymentAgent] Will retry in 30 seconds...")
+            await asyncio.sleep(30)
+            # Try calling listen again after delay
+            return await self.listen()

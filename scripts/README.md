@@ -1,18 +1,31 @@
 # Alert Publisher Tool
 
-This tool helps you test the Observability Agent System by publishing sample alerts to Redis. It simulates various types of alerts that might occur in a production environment.
+This tool helps you test the Observability Agent System by publishing sample alerts to NATS JetStream. It simulates various types of alerts that might occur in a production environment.
+
+## Overview
+
+The Alert Publisher can be run in two ways:
+1. As a Python script directly on your local machine
+2. As a containerized application in a Kubernetes environment
 
 ## Prerequisites
 
-1. Python 3.10+
-2. Redis server running
+### For Local Execution
+1. Python 3.9+
+2. NATS server with JetStream enabled
 3. Observability Agent System deployed
+
+### For Kubernetes Deployment
+1. Kubernetes cluster with the Observability Agent deployed
+2. Container registry to store the alert publisher image
 
 ## Installation
 
-1. Install the required Python package:
+### Local Installation
+
+1. Install the required Python packages:
    ```bash
-   pip install redis
+   pip install -r requirements-alert-publisher.txt
    ```
 
 2. Make the script executable:
@@ -20,27 +33,58 @@ This tool helps you test the Observability Agent System by publishing sample ale
    chmod +x alert_publisher.py
    ```
 
+### Container Image Build
+
+1. Build the Docker image:
+   ```bash
+   # Using the Makefile
+   make alert-publisher REGISTRY=your-registry
+
+   # Or directly with Docker
+   docker build -t your-registry/alert-publisher:latest -f Dockerfile.alert-publisher .
+   ```
+
+2. Push the image to your registry:
+   ```bash
+   docker push your-registry/alert-publisher:latest
+   ```
+
 ## Usage
 
-### Basic Usage
-
-Publish a single random alert:
-```bash
-./alert_publisher.py
-```
-
-### Command Line Options
+### Running Locally
 
 ```bash
 ./alert_publisher.py [options]
 
 Options:
-  --redis-host HOST     Redis host (default: localhost)
-  --redis-port PORT     Redis port (default: 6379)
+  --nats-server URL     NATS server URL (default: nats://nats:4222)
   --alert-type TYPE     Type of alert to publish
   --interval SECONDS    Interval between alerts (default: 5)
   --count NUMBER        Number of alerts to publish (default: 1)
 ```
+
+### Running in Kubernetes
+
+1. Update the registry reference in the Kubernetes manifest:
+   ```bash
+   sed -i 's|\${REGISTRY}|your-registry|g' alert-publisher-k8s.yaml
+   ```
+
+2. Deploy as a one-time job:
+   ```bash
+   kubectl apply -f alert-publisher-k8s.yaml
+   ```
+
+3. For continuous alert generation, use the deployment:
+   ```bash
+   # The deployment will continuously generate alerts at the configured interval
+   kubectl get pods -l app=alert-publisher  # Check if it's running
+   ```
+
+4. To customize alert generation, edit the manifest or use kubectl:
+   ```bash
+   kubectl set env deployment/alert-publisher ALERT_TYPE=cpu ALERT_COUNT=10 INTERVAL=30
+   ```
 
 ### Alert Types
 
@@ -75,19 +119,14 @@ The tool supports the following alert types:
 
 ### Examples
 
-1. Publish 5 CPU alerts with 10-second intervals:
+1. Publish 5 CPU alerts with 10-second intervals locally:
    ```bash
-   ./alert_publisher.py --alert-type cpu --count 5 --interval 10
+   ./alert_publisher.py --alert-type cpu --count 5 --interval 10 --nats-server nats://localhost:4222
    ```
 
-2. Publish random alerts continuously:
+2. Run a one-time job in Kubernetes:
    ```bash
-   ./alert_publisher.py --count 0 --interval 30
-   ```
-
-3. Publish to a remote Redis instance:
-   ```bash
-   ./alert_publisher.py --redis-host redis.example.com --redis-port 6379
+   kubectl run alert-publisher-job --image=your-registry/alert-publisher:latest --restart=Never -- --alert-type cpu --count 5 --interval 10
    ```
 
 ## Expected System Behavior
@@ -95,7 +134,7 @@ The tool supports the following alert types:
 When you publish alerts, you should observe the following in the Observability Agent System:
 
 1. **Orchestrator**
-   - Receives the alert from Redis
+   - Receives the alert from NATS JetStream
    - Logs the alert reception
    - Distributes to relevant agents
 
@@ -129,22 +168,20 @@ When you publish alerts, you should observe the following in the Observability A
    # etc.
    ```
 
-3. **Check Redis Messages**
+3. **Check NATS Streams**
    ```bash
-   redis-cli
-   > SUBSCRIBE alerts
-   ```
-
-4. **Check Qdrant Data**
-   ```bash
-   curl http://localhost:6333/collections/incidents/points
+   # Using the NATS CLI
+   nats stream info ALERTS
+   
+   # Or from another pod with the NATS client
+   kubectl exec -it observability-agent-nats-0 -- nats stream info ALERTS
    ```
 
 ## Troubleshooting
 
 1. **Alert Not Received**
-   - Verify Redis connection
-   - Check Redis pub/sub channel
+   - Verify NATS connection
+   - Check NATS stream existence
    - Verify orchestrator is running
 
 2. **No Agent Response**
@@ -172,4 +209,4 @@ When you publish alerts, you should observe the following in the Observability A
 3. **Data Validation**
    - Verify alert format
    - Check data persistence
-   - Validate analysis results 
+   - Validate analysis results

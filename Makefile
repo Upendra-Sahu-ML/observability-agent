@@ -17,11 +17,15 @@ NAMESPACE ?= observability
 RELEASE_NAME ?= observability-agent
 PROMETHEUS_URL ?= http://prometheus-server.monitoring:9090
 LOKI_URL ?= http://loki-gateway.monitoring:3100
+PLATFORM ?= linux/amd64
 
 # List of components to build
 COMPONENTS = orchestrator metric-agent log-agent deployment-agent root-cause-agent runbook-agent tracing-agent notification-agent postmortem-agent
 
-.PHONY: all build push deploy clean help $(COMPONENTS)
+# Additional tools
+TOOLS = alert-publisher
+
+.PHONY: all build push deploy clean help $(COMPONENTS) $(TOOLS)
 
 # Default target
 all: build
@@ -63,8 +67,8 @@ build: $(COMPONENTS)
 # Push all container images to registry
 push:
 	@for component in $(COMPONENTS); do \
-		echo "Pushing $(REGISTRY)/observability-agent/$$component:$(TAG)"; \
-		$(CONTAINER_CMD) push $(REGISTRY)/observability-agent/$$component:$(TAG); \
+		echo "Pushing $(REGISTRY)/observability-agent-$$component:$(TAG)"; \
+		$(CONTAINER_CMD) push $(REGISTRY)/observability-agent-$$component:$(TAG); \
 	done
 
 # Deploy the Helm chart
@@ -87,37 +91,41 @@ deploy:
 # Remove all container images
 clean:
 	@for component in $(COMPONENTS); do \
-		echo "Removing $(REGISTRY)/observability-agent/$$component:$(TAG)"; \
-		$(CONTAINER_CMD) rmi $(REGISTRY)/observability-agent/$$component:$(TAG) || true; \
+		echo "Removing $(REGISTRY)/observability-agent-$$component:$(TAG)"; \
+		$(CONTAINER_CMD) rmi $(REGISTRY)/observability-agent-$$component:$(TAG) || true; \
 	done
 
 # Individual component targets
 orchestrator:
-	$(CONTAINER_CMD) build -t $(REGISTRY)/observability-agent/orchestrator:$(TAG) -f orchestrator/Dockerfile .
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-orchestrator:$(TAG) -f orchestrator/Dockerfile .
 
 metric-agent:
-	$(CONTAINER_CMD) build -t $(REGISTRY)/observability-agent/metric-agent:$(TAG) -f agents/metric_agent/Dockerfile .
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-metric-agent:$(TAG) -f agents/metric_agent/Dockerfile .
 
 log-agent:
-	$(CONTAINER_CMD) build -t $(REGISTRY)/observability-agent/log-agent:$(TAG) -f agents/log_agent/Dockerfile .
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-log-agent:$(TAG) -f agents/log_agent/Dockerfile .
 
 deployment-agent:
-	$(CONTAINER_CMD) build -t $(REGISTRY)/observability-agent/deployment-agent:$(TAG) -f agents/deployment_agent/Dockerfile .
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-deployment-agent:$(TAG) -f agents/deployment_agent/Dockerfile .
 
 root-cause-agent:
-	$(CONTAINER_CMD) build -t $(REGISTRY)/observability-agent/root-cause-agent:$(TAG) -f agents/root_cause_agent/Dockerfile .
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-root-cause-agent:$(TAG) -f agents/root_cause_agent/Dockerfile .
 
 runbook-agent:
-	$(CONTAINER_CMD) build -t $(REGISTRY)/observability-agent/runbook-agent:$(TAG) -f agents/runbook_agent/Dockerfile .
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-runbook-agent:$(TAG) -f agents/runbook_agent/Dockerfile .
 
 tracing-agent:
-	$(CONTAINER_CMD) build -t $(REGISTRY)/observability-agent/tracing-agent:$(TAG) -f agents/tracing_agent/Dockerfile .
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-tracing-agent:$(TAG) -f agents/tracing_agent/Dockerfile .
 
 notification-agent:
-	$(CONTAINER_CMD) build -t $(REGISTRY)/observability-agent/notification-agent:$(TAG) -f agents/notification_agent/Dockerfile .
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-notification-agent:$(TAG) -f agents/notification_agent/Dockerfile .
 
 postmortem-agent:
-	$(CONTAINER_CMD) build -t $(REGISTRY)/observability-agent/postmortem-agent:$(TAG) -f agents/postmortem_agent/Dockerfile .
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-postmortem-agent:$(TAG) -f agents/postmortem_agent/Dockerfile .
+
+# Tool targets
+alert-publisher:
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/alert-publisher:$(TAG) -f scripts/Dockerfile.alert-publisher scripts/
 
 run:
 	$(COMPOSE_CMD) up --build

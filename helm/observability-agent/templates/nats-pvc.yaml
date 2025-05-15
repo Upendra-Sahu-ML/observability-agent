@@ -1,4 +1,4 @@
-{{- if .Values.nats.jetstream.fileStorage }}
+{{- if and .Values.nats.enabled .Values.nats.jetstream.enabled .Values.nats.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -11,8 +11,12 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: {{ .Values.nats.jetstream.storageSize | default "1Gi" }}
-  {{- if .Values.nats.jetstream.storageClass }}
-  storageClassName: {{ .Values.nats.jetstream.storageClass }}
+      storage: {{ .Values.nats.persistence.size }}
+  {{- if .Values.nats.persistence.storageClass }}
+  {{- if (eq "-" .Values.nats.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.nats.persistence.storageClass }}
+  {{- end }}
   {{- end }}
 {{- end }}

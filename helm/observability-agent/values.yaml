@@ -13,9 +13,9 @@ global:
 # OpenAI API settings
 openai:
   # API key for OpenAI (required)
-  apiKey: ""
+  apiKey: "YOUR_OPENAI_API_KEY"
   # Model to use (default: gpt-4)
-  model: "gpt-4"
+  model: "gpt-4o-mini"
 
 # NATS service configuration
 nats:
@@ -29,11 +29,11 @@ nats:
     enabled: true
   persistence:
     # Persistence settings for NATS
-    enabled: true
+    enabled: false  # Disabled for local development - change to true for production
     # Storage size for NATS persistence
     size: 1Gi
     # Alternatively, use memory storage (faster but non-persistent)
-    # memStorage: 1G
+    memStorage: 1G
     storageClass: ""  # Use default storage class
   resources:
     limits:
@@ -138,7 +138,7 @@ orchestrator:
   replicas: 1
   # Image settings
   image:
-    repository: observability-agent/orchestrator
+    repository: docker.io/upendrasahu/observability-agent-orchestrator
     tag: latest
   # Service settings
   service:
@@ -161,7 +161,7 @@ metricAgent:
   replicas: 1
   # Image settings
   image:
-    repository: observability-agent/metric-agent
+    repository: docker.io/upendrasahu/observability-agent-metric-agent
     tag: latest
   # Resource settings
   resources:
@@ -183,7 +183,7 @@ logAgent:
   replicas: 1
   # Image settings
   image:
-    repository: observability-agent/log-agent
+    repository: docker.io/upendrasahu/observability-agent-log-agent
     tag: latest
   # Resource settings
   resources:
@@ -205,7 +205,7 @@ deploymentAgent:
   replicas: 1
   # Image settings
   image:
-    repository: observability-agent/deployment-agent
+    repository: docker.io/upendrasahu/observability-agent-deployment-agent
     tag: latest
   # Resource settings
   resources:
@@ -230,7 +230,7 @@ rootCauseAgent:
   replicas: 1
   # Image settings
   image:
-    repository: observability-agent/root-cause-agent
+    repository: docker.io/upendrasahu/observability-agent-root-cause-agent
     tag: latest
   # Resource settings
   resources:
@@ -249,7 +249,7 @@ tracingAgent:
   replicas: 1
   # Image settings
   image:
-    repository: observability-agent/tracing-agent
+    repository: docker.io/upendrasahu/observability-agent-tracing-agent
     tag: latest
   # Resource settings
   resources:
@@ -271,7 +271,7 @@ runbookAgent:
   replicas: 1
   # Image settings
   image:
-    repository: observability-agent/runbook-agent
+    repository: docker.io/upendrasahu/observability-agent-runbook-agent
     tag: latest
   # Resource settings
   resources:
@@ -290,7 +290,7 @@ notificationAgent:
   replicas: 1
   # Image settings
   image:
-    repository: observability-agent/notification-agent
+    repository: docker.io/upendrasahu/observability-agent-notification-agent
     tag: latest
   # Resource settings
   resources:
@@ -309,7 +309,7 @@ postmortemAgent:
   replicas: 1
   # Image settings
   image:
-    repository: observability-agent/postmortem-agent
+    repository: docker.io/upendrasahu/observability-agent-postmortem-agent
     tag: latest
   # Resource settings
   resources:

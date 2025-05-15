@@ -5,6 +5,8 @@ from typing import Dict, Any, List
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 import markdown
+from datetime import datetime
+from crewai.tools import tool
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,32 +38,17 @@ class KnowledgeBaseTool:
                 )
             )
     
-    def execute(self, action: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    @tool("Store incident data in the knowledge base")
+    def store_incident(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute a knowledge base action
+        Store an incident in the knowledge base
         
         Args:
-            action (str): The action to perform (store, retrieve, search)
-            data (Dict[str, Any]): The data for the action
+            data (dict): Incident data including alert_id, embedding, title, description, etc.
             
         Returns:
-            Dict[str, Any]: Result of the action
+            dict: Status of the store operation
         """
-        try:
-            if action == "store":
-                return self._store_incident(data)
-            elif action == "retrieve":
-                return self._retrieve_incident(data)
-            elif action == "search":
-                return self._search_incidents(data)
-            else:
-                return {"status": "error", "error": f"Unknown action: {action}"}
-        except Exception as e:
-            logger.error(f"Error executing knowledge base action: {str(e)}")
-            return {"status": "error", "error": str(e)}
-    
-    def _store_incident(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Store an incident in the knowledge base"""
         # Store in Qdrant with metadata
         self.qdrant_client.upsert(
             collection_name="incidents",
@@ -84,10 +71,17 @@ class KnowledgeBaseTool:
         
         return {"status": "success", "message": "Incident stored successfully"}
     
-    def _retrieve_incident(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Retrieve an incident from the knowledge base"""
-        alert_id = data["alert_id"]
+    @tool("Retrieve incident data from the knowledge base by ID")
+    def retrieve_incident(self, alert_id: str) -> Dict[str, Any]:
+        """
+        Retrieve an incident from the knowledge base
         
+        Args:
+            alert_id (str): ID of the alert/incident to retrieve
+            
+        Returns:
+            dict: Incident data if found, error status otherwise
+        """
         try:
             result = self.qdrant_client.retrieve(
                 collection_name="incidents",
@@ -100,15 +94,23 @@ class KnowledgeBaseTool:
         
         return {"status": "error", "error": "Incident not found"}
     
-    def _search_incidents(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Search for incidents in the knowledge base"""
-        query = data["query"]
-        limit = data.get("limit", 5)
+    @tool("Search for similar incidents in the knowledge base")
+    def search_incidents(self, query: str, embedding: list, limit: int = 5) -> Dict[str, Any]:
+        """
+        Search for incidents in the knowledge base
         
+        Args:
+            query (str): Text query to search for
+            embedding (list): Vector embedding of the query
+            limit (int, optional): Maximum number of results to return
+            
+        Returns:
+            dict: Search results with matching incidents
+        """
         # Search in Qdrant
         results = self.qdrant_client.search(
             collection_name="incidents",
-            query_vector=data["embedding"],
+            query_vector=embedding,
             limit=limit
         )
         
@@ -120,35 +122,21 @@ class KnowledgeBaseTool:
 class PostmortemTemplateTool:
     """Tool for managing postmortem templates"""
     
-    def __init__(self):
+    def __init__(self, template_dir=None):
         """Initialize the postmortem template tool"""
-        self.template_dir = os.environ.get("POSTMORTEM_TEMPLATE_DIR", "/app/templates")
+        self.template_dir = template_dir or os.environ.get("POSTMORTEM_TEMPLATE_DIR", "/app/templates")
     
-    def execute(self, action: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    @tool("Get a postmortem template by name")
+    def get_template(self, template_name: str = "default") -> Dict[str, Any]:
         """
-        Execute a postmortem template action
+        Get a postmortem template
         
         Args:
-            action (str): The action to perform (get_template, fill_template)
-            data (Dict[str, Any]): The data for the action
+            template_name (str, optional): Name of the template to retrieve
             
         Returns:
-            Dict[str, Any]: Result of the action
+            dict: Template content if found, error status otherwise
         """
-        try:
-            if action == "get_template":
-                return self._get_template(data)
-            elif action == "fill_template":
-                return self._fill_template(data)
-            else:
-                return {"status": "error", "error": f"Unknown action: {action}"}
-        except Exception as e:
-            logger.error(f"Error executing postmortem template action: {str(e)}")
-            return {"status": "error", "error": str(e)}
-    
-    def _get_template(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Get a postmortem template"""
-        template_name = data.get("template_name", "default")
         template_path = os.path.join(self.template_dir, f"{template_name}.md")
         
         try:
@@ -158,11 +146,18 @@ class PostmortemTemplateTool:
         except FileNotFoundError:
             return {"status": "error", "error": f"Template not found: {template_name}"}
     
-    def _fill_template(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Fill a postmortem template with incident data"""
-        template = data["template"]
-        incident_data = data["incident_data"]
+    @tool("Fill a template with incident data")
+    def fill_template(self, template: str, incident_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Fill a postmortem template with incident data
         
+        Args:
+            template (str): Template content with placeholders
+            incident_data (dict): Data to fill in the template
+            
+        Returns:
+            dict: Filled template content
+        """
         # Replace placeholders in template
         for key, value in incident_data.items():
             template = template.replace(f"{{{{ {key} }}}}", str(value))
@@ -176,31 +171,18 @@ class RunbookUpdateTool:
         """Initialize the runbook update tool"""
         self.runbook_dir = os.environ.get("RUNBOOK_DIR", "/app/runbooks")
     
-    def execute(self, action: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    @tool("Update an existing runbook with new information")
+    def update_runbook(self, runbook_name: str, incident_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute a runbook update action
+        Update an existing runbook
         
         Args:
-            action (str): The action to perform (update, create)
-            data (Dict[str, Any]): The data for the action
+            runbook_name (str): Name of the runbook to update
+            incident_data (dict): New incident data to add to the runbook
             
         Returns:
-            Dict[str, Any]: Result of the action
+            dict: Status of the update operation
         """
-        try:
-            if action == "update":
-                return self._update_runbook(data)
-            elif action == "create":
-                return self._create_runbook(data)
-            else:
-                return {"status": "error", "error": f"Unknown action: {action}"}
-        except Exception as e:
-            logger.error(f"Error executing runbook update action: {str(e)}")
-            return {"status": "error", "error": str(e)}
-    
-    def _update_runbook(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Update an existing runbook"""
-        runbook_name = data["runbook_name"]
         runbook_path = os.path.join(self.runbook_dir, f"{runbook_name}.md")
         
         try:
@@ -208,7 +190,7 @@ class RunbookUpdateTool:
                 content = f.read()
             
             # Update content based on incident data
-            updated_content = self._merge_runbook_content(content, data["incident_data"])
+            updated_content = self._merge_runbook_content(content, incident_data)
             
             with open(runbook_path, "w") as f:
                 f.write(updated_content)
@@ -217,13 +199,22 @@ class RunbookUpdateTool:
         except FileNotFoundError:
             return {"status": "error", "error": f"Runbook not found: {runbook_name}"}
     
-    def _create_runbook(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new runbook"""
-        runbook_name = data["runbook_name"]
+    @tool("Create a new runbook from incident data")
+    def create_runbook(self, runbook_name: str, incident_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a new runbook
+        
+        Args:
+            runbook_name (str): Name for the new runbook
+            incident_data (dict): Incident data to use in the runbook
+            
+        Returns:
+            dict: Status of the create operation
+        """
         runbook_path = os.path.join(self.runbook_dir, f"{runbook_name}.md")
         
         try:
-            content = self._generate_runbook_content(data["incident_data"])
+            content = self._generate_runbook_content(incident_data)
             
             with open(runbook_path, "w") as f:
                 f.write(content)
@@ -270,4 +261,84 @@ class RunbookUpdateTool:
 
 ## Related Incidents
 - {incident_data['alert_id']} ({incident_data['timestamp']})
-""" 
+"""
+
+class PostmortemGeneratorTool:
+    """Tool for generating comprehensive postmortem documents"""
+    
+    @tool("Generate a comprehensive postmortem document")
+    def generate_postmortem(self, incident_data: Dict[str, Any], 
+                root_cause: str = "", 
+                impact: str = "", 
+                resolution: str = "", 
+                **kwargs) -> Dict[str, Any]:
+        """
+        Generate a comprehensive postmortem document
+        
+        Args:
+            incident_data (dict): Data about the incident
+            root_cause (str): Identified root cause of the incident
+            impact (str): Description of the impact of the incident
+            resolution (str): How the incident was resolved
+            
+        Returns:
+            dict: Generated postmortem document
+        """
+        try:
+            # Extract incident details
+            alert_id = incident_data.get("alert_id", "unknown")
+            service = incident_data.get("service", "unknown")
+            severity = incident_data.get("severity", "unknown")
+            description = incident_data.get("description", "No description provided")
+            timestamp = incident_data.get("timestamp", "unknown")
+            
+            # Build the document
+            postmortem = f"""# Incident Postmortem: {service} {severity.upper()} Incident {alert_id}
+
+## Executive Summary
+{description}
+
+## Incident Timeline
+- **Detection**: {timestamp}
+- **Acknowledgment**: Shortly after detection
+- **Resolution**: Detailed in resolution steps below
+
+## Root Cause Analysis
+{root_cause}
+
+## Impact Assessment
+{impact if impact else "Impact assessment not provided."}
+
+## Mitigation Steps
+{resolution if resolution else "Resolution steps not provided."}
+
+## Prevention Measures
+Based on the root cause analysis, here are recommended prevention measures:
+- Implement monitoring for this specific failure mode
+- Add alerting for early detection of similar issues
+- Consider adding redundancy or fallback mechanisms
+
+## Lessons Learned
+- Importance of quick incident detection and response
+- Value of comprehensive monitoring
+- Need for clear communication during incidents
+
+## Action Items
+1. Review monitoring for the affected system
+2. Update runbooks with new information from this incident
+3. Schedule a follow-up review in 2 weeks to check prevention measures
+4. Conduct a training session on the lessons learned
+"""
+            
+            return {
+                "status": "success", 
+                "postmortem": postmortem,
+                "format": "markdown"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error generating postmortem: {str(e)}")
+            return {
+                "status": "error", 
+                "error": str(e)
+            }

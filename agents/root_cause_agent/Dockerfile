@@ -18,15 +18,16 @@ COPY requirements.txt /app/requirements.txt
 COPY agents/root_cause_agent/requirements.txt /app/agents/root_cause_agent/requirements.txt
 
 # Install dependencies
-RUN pip install --no-cache-dir -r /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/agents/root_cause_agent/requirements.txt
+# Install uv
+RUN pip install --no-cache-dir uv
+RUN uv pip install --system --upgrade pip
+RUN uv pip install --system --no-cache-dir -r /app/requirements.txt
+RUN uv pip install --system --no-cache-dir -r /app/agents/root_cause_agent/requirements.txt
 
 # Copy the rest of the application
 COPY common/ /app/common/
 COPY agents/root_cause_agent/ /app/agents/root_cause_agent/
 
-# Set the working directory to the agent directory
-WORKDIR /app/agents/root_cause_agent
-
-# Run the agent
-CMD ["python", "main.py"]
+# Run the agent from the root directory
+WORKDIR /app
+CMD ["python", "agents/root_cause_agent/main.py"]

@@ -8,20 +8,23 @@ The observability-agent system is now deploying with the following components:
   - Log Agent (connecting to Loki at {{ .Values.logAgent.loki.url }})
   - Deployment Agent
   - Root Cause Agent
+{{- if .Values.redis.enabled }}
   - Redis (used for inter-agent communication)
+{{- else }}
+  - NATS (used for inter-agent communication)
+{{- end }}
 
 {{- if .Values.redis.enabled }}
 Redis is being deployed as part of this chart and will be available at:
   {{ include "observability-agent.fullname" . }}-redis:6379
-{{- else if .Values.redis.external.enabled }}
-The system will connect to your external Redis instance at:
-  {{ .Values.redis.external.host }}:{{ .Values.redis.external.port }}
+{{- else }}
+The system will use NATS for messaging, which is enabled by default.
 {{- end }}
 
 To test the system, you can send an alert message to the Orchestrator by using:
 
-kubectl port-forward svc/{{ include "observability-agent.fullname" . }}-redis 6379:6379
-redis-cli -h localhost -p 6379 publish alerts '{"id":"test1","labels":{"service":"myapp","namespace":"default"},"startsAt":"2023-01-01T00:00:00Z"}'
+kubectl port-forward svc/{{ include "observability-agent.fullname" . }}-nats 4222:4222
+# Use nats CLI or another NATS client to publish messages
 
 For more information on how to use the Observability Agent, please see:
 https://github.com/yourusername/observability-agent

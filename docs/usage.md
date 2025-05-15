@@ -13,15 +13,18 @@ The observability system consists of several specialized agents that work togeth
 5. **Root Cause Agent**: Identifies incident root causes
 6. **Runbook Agent**: Manages and executes runbooks
 7. **Metric Agent**: Monitors system metrics and thresholds
+8. **Tracing Agent**: Analyzes distributed traces for performance issues
 
 ## Alert Flow
 
-1. When an alert is triggered, it is sent to the notification agent
-2. The notification agent distributes the alert to configured channels (Slack, PagerDuty, Webex)
-3. The postmortem agent creates an incident record and begins documentation
-4. Specialized agents (Deployment, Log, Root Cause) analyze the incident
-5. The runbook agent suggests and executes relevant runbooks
-6. The postmortem agent updates documentation with findings and resolutions
+1. An alert is received by the Orchestrator via NATS "alert_stream" subject
+2. The Orchestrator distributes tasks to relevant specialized agents via NATS
+3. Specialized agents (Metric, Log, Deployment, Tracing) analyze the incident
+4. Agents publish their analyses back to the Orchestrator via "orchestrator_response" 
+5. The Root Cause Agent correlates analyses to determine the most likely cause
+6. The Notification Agent distributes alerts to configured channels
+7. The Runbook Agent suggests and executes relevant runbooks
+8. The Postmortem Agent creates and updates incident documentation
 
 ## Notification Channels
 
@@ -34,6 +37,8 @@ The notification agent sends alerts to Slack channels with the following format:
 Severity: [Severity Level]
 Description: [Alert Description]
 Timestamp: [Alert Time]
+Service: [Service Name]
+Root Cause: [Root Cause] (if available)
 ```
 
 ### PagerDuty
@@ -52,6 +57,32 @@ Webex notifications include:
 - Timestamp
 - Direct link to incident details
 
+## Correlation Analysis
+
+The Root Cause Agent can correlate multiple alerts occurring within a time window to identify common underlying issues:
+
+1. Multiple alerts are processed by the Orchestrator
+2. The Root Cause Agent uses the `correlation_analysis` tool to analyze temporal relationships
+3. Alerts with high correlation are grouped into a single incident
+4. The notification includes information about all correlated alerts
+5. The postmortem documents the relationship between the alerts
+
+Example of using correlation analysis:
+
+```python
+from common.tools.root_cause_tools import correlation_analysis
+
+# Analyze multiple alerts
+results = correlation_analysis(
+    events=[alert1, alert2, alert3],
+    time_window="15m",
+    correlation_threshold=0.7
+)
+
+# Results contain correlation information
+correlated_components = results["correlations"]
+```
+
 ## Postmortem Process
 
 1. **Incident Creation**
@@ -59,8 +90,8 @@ Webex notifications include:
    - Initial documentation with alert details
 
 2. **Investigation**
-   - Root cause analysis
-   - Timeline construction
+   - Root cause analysis is incorporated
+   - Timeline construction from agent analyses
    - Impact assessment
 
 3. **Resolution**
@@ -69,9 +100,9 @@ Webex notifications include:
    - Lessons learned
 
 4. **Knowledge Base Update**
-   - Runbook updates
-   - Pattern recognition
-   - Similar incident linking
+   - Runbook updates from the Runbook Agent
+   - Pattern recognition for future incidents
+   - Similar incident linking through vector database
 
 ## Runbook Management
 
@@ -117,6 +148,21 @@ kubectl logs -n observability deployment/notification-agent
 kubectl logs -n observability deployment/postmortem-agent
 ```
 
+### NATS Health
+
+Monitor NATS and JetStream status:
+
+```bash
+# Check NATS server
+kubectl exec -it nats-0 -n observability -- nats server info
+
+# Check NATS streams
+kubectl exec -it nats-0 -n observability -- nats stream ls
+
+# Check NATS consumers
+kubectl exec -it nats-0 -n observability -- nats consumer ls AGENT_TASKS
+```
+
 ### System Health
 
 The system exposes metrics for monitoring:
@@ -124,6 +170,7 @@ The system exposes metrics for monitoring:
 - Notification delivery success
 - Postmortem completion time
 - Runbook execution success
+- NATS message throughput
 
 ## Troubleshooting
 
@@ -139,10 +186,15 @@ The system exposes metrics for monitoring:
    - Check storage permissions
    - Review vector database connectivity
 
-3. **Runbook Execution Problems**
-   - Validate runbook format
-   - Check execution permissions
-   - Review error logs
+3. **NATS Connectivity Issues**
+   - Verify NATS server is running
+   - Check NATS stream configurations
+   - Review consumer acknowledgments
+
+4. **Agent Processing Problems**
+   - Check agent logs for errors
+   - Verify message acknowledgments
+   - Review CrewAI tool outputs
 
 ### Debugging
 
@@ -154,6 +206,12 @@ LOG_LEVEL=DEBUG
 View detailed logs:
 ```bash
 kubectl logs -n observability deployment/[agent-name] -f
+```
+
+Check NATS message flow:
+```bash
+# Create monitoring subject
+kubectl exec -it nats-0 -n observability -- nats sub ">"
 ```
 
 ## Best Practices
@@ -175,10 +233,29 @@ kubectl logs -n observability deployment/[agent-name] -f
 
 4. **System Maintenance**
    - Regular health checks
-   - Log rotation
+   - NATS stream management
    - Database maintenance
 
 ## API Reference
+
+### Orchestrator API
+
+```python
+# Submit alert
+POST /api/v1/alert
+{
+    "alert_id": "string",
+    "labels": {
+        "alertname": "string",
+        "service": "string",
+        "severity": "string"
+    },
+    "annotations": {
+        "description": "string"
+    },
+    "startsAt": "string"
+}
+```
 
 ### Notification Agent
 
@@ -229,4 +306,4 @@ PUT /api/v1/runbook/{name}
 {
     "content": "string"
 }
-``` 
+```

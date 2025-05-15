@@ -12,27 +12,27 @@ data:
     # Incident Postmortem
 
     ## Incident Summary
-    - **Incident ID**: {{ incident_id }}
-    - **Start Time**: {{ start_time }}
-    - **End Time**: {{ end_time }}
-    - **Severity**: {{ severity }}
-    - **Status**: {{ status }}
+    - **Incident ID**: {{ "{{ incident_id }}" }}
+    - **Start Time**: {{ "{{ start_time }}" }}
+    - **End Time**: {{ "{{ end_time }}" }}
+    - **Severity**: {{ "{{ severity }}" }}
+    - **Status**: {{ "{{ status }}" }}
 
     ## Impact
-    {{ impact }}
+    {{ "{{ impact }}" }}
 
     ## Root Cause
-    {{ root_cause }}
+    {{ "{{ root_cause }}" }}
 
     ## Timeline
-    {{ timeline }}
+    {{ "{{ timeline }}" }}
 
     ## Actions Taken
-    {{ actions_taken }}
+    {{ "{{ actions_taken }}" }}
 
     ## Lessons Learned
-    {{ lessons_learned }}
+    {{ "{{ lessons_learned }}" }}
 
     ## Action Items
-    {{ action_items }}
-{{- end }} 
+    {{ "{{ action_items }}" }}
+{{- end }}

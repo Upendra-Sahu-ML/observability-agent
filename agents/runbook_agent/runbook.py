@@ -6,10 +6,13 @@ import nats
 from nats.js.api import ConsumerConfig, DeliverPolicy
 from datetime import datetime
 from crewai import Agent, Task, Crew
-from langchain_openai import ChatOpenAI
-from langchain.tools import BaseTool, StructuredTool, tool
+from crewai.llm import LLM
+from crewai.tools import tool
 from dotenv import load_dotenv
-from common.tools.runbook_tools import RunbookFetchTool
+from common.tools.runbook_tools import (
+    RunbookSearchTool,
+    RunbookExecutionTool
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,40 +21,44 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class RunbookAgent:
-    def __init__(self, nats_server="nats://nats:4222"):
+    def __init__(self, runbook_dir="/runbooks", nats_server="nats://nats:4222"):
         # NATS connection parameters
         self.nats_server = nats_server
         self.nats_client = None
         self.js = None  # JetStream context
+        
+        # Runbook configuration
+        self.runbook_dir = runbook_dir
         
         # OpenAI API key from environment
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         if not self.openai_api_key:
             logger.warning("OPENAI_API_KEY environment variable not set")
         
-        # Get runbook directory from environment and set it as an environment variable for RunbookFetchTool
-        runbook_dir = os.environ.get("RUNBOOK_DIR", "/app/runbooks")
-        os.environ["RUNBOOK_LOCAL_PATH"] = runbook_dir
-        
         # Initialize OpenAI model
-        self.llm = ChatOpenAI(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
+        self.llm = LLM(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
         
-        # Initialize runbook tools - no parameters needed as it uses environment variables
-        self.runbook_tool = RunbookFetchTool()
+        # Initialize runbook tools
+        self.runbook_search_tool = RunbookSearchTool(runbook_dir=self.runbook_dir)
+        self.runbook_execution_tool = RunbookExecutionTool()
         
-        # Convert function to proper LangChain tool
-        self.langchain_tools = [
-            StructuredTool.from_function(self.runbook_tool.fetch)
-        ]
-        
-        # Create a crewAI agent for runbook management
-        self.runbook_manager = Agent(
-            role="Runbook Manager",
-            goal="Provide the most relevant runbook procedures based on incident data",
-            backstory="You are an expert at managing runbooks and selecting the most appropriate remediation steps for incidents.",
+        # Create a crewAI agent for runbook execution
+        self.runbook_executor = Agent(
+            role="Runbook Executor",
+            goal="Find and execute appropriate runbooks for incident resolution",
+            backstory="You are an expert at finding and executing runbooks to resolve system incidents.",
             verbose=True,
             llm=self.llm,
-            tools=self.langchain_tools
+            tools=[
+                # Runbook search tools
+                self.runbook_search_tool.search_runbooks,
+                self.runbook_search_tool.get_runbook_by_alert,
+                
+                # Runbook execution tools
+                self.runbook_execution_tool.execute_runbook,
+                self.runbook_execution_tool.track_execution,
+                self.runbook_execution_tool.generate_custom_runbook
+            ]
         )
     
     async def connect(self):
@@ -157,7 +164,7 @@ class RunbookAgent:
             Format your response as a clear, step-by-step guide that an on-call engineer can follow.
             Include verification steps to confirm that the issue has been resolved.
             """,
-            agent=self.runbook_manager,
+            agent=self.runbook_executor,
             expected_output="A comprehensive runbook with step-by-step instructions"
         )
         
@@ -172,7 +179,7 @@ class RunbookAgent:
         
         # Create crew with runbook manager
         crew = Crew(
-            agents=[self.runbook_manager],
+            agents=[self.runbook_executor],
             tasks=[runbook_task],
             verbose=True
         )

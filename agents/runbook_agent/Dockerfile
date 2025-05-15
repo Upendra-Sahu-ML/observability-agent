@@ -18,15 +18,18 @@ COPY requirements.txt /app/requirements.txt
 COPY agents/runbook_agent/requirements.txt /app/agents/runbook_agent/requirements.txt
 
 # Install dependencies
-RUN pip install --no-cache-dir -r /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/agents/runbook_agent/requirements.txt
+# Install uv
+RUN pip install --no-cache-dir uv
+RUN uv pip install --system --upgrade pip
+RUN uv pip install --system --no-cache-dir -r /app/requirements.txt
+RUN uv pip install --system --no-cache-dir -r /app/agents/runbook_agent/requirements.txt
 
 # Copy the rest of the application
 COPY common/ /app/common/
 COPY agents/runbook_agent/ /app/agents/runbook_agent/
 
 # Set the working directory to the agent directory
-WORKDIR /app/agents/runbook_agent
+WORKDIR /app
 
 # Run the agent
-CMD ["python", "main.py"]
+CMD ["python", "agents/runbook_agent/main.py"]
