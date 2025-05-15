@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="600px" preserveAspectRatio="none" style="width:800px;height:600px;background:#FFFFFF;" version="1.1" viewBox="0 0 800 600" width="800px" zoomAndPan="magnify">
+  <defs>
+    <filter height="300%" id="f1h9esl9xtzvj3" width="300%" x="-1" y="-1">
+      <feGaussianBlur result="blurOut" stdDeviation="2.0"/>
+      <feColorMatrix in="blurOut" result="blurOut2" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .4 0"/>
+      <feOffset dx="4.0" dy="4.0" in="blurOut2" result="blurOut3"/>
+      <feBlend in="SourceGraphic" in2="blurOut3" mode="normal"/>
+    </filter>
+  </defs>
+  <g>
+    <!-- Title -->
+    <text fill="#000000" font-family="sans-serif" font-size="18" lengthAdjust="spacing" textLength="240" x="280" y="28.708">Multi-Agent Patterns</text>
+    
+    <!-- Sequential Pattern -->
+    <rect fill="#F9D5E5" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="50" y="100"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="60" y="130.9951">Sequential</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="50" y="180"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="60" y="210.9951">Agent 1</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="50" y="260"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="60" y="290.9951">Agent 2</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="50" y="340"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="60" y="370.9951">Agent 3</text>
+    
+    <rect fill="#E06377" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="50" y="420"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="60" y="450.9951">Agent 4</text>
+    
+    <polygon fill="#000000" points="110,156.2969,110,160.2969,100,164.2969,110,168.2969,110,172.2969,120,168.2969,120,164.2969,110,160.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="110" x2="110" y1="146.2969" y2="172.2969"/>
+    
+    <polygon fill="#000000" points="110,236.2969,110,240.2969,100,244.2969,110,248.2969,110,252.2969,120,248.2969,120,244.2969,110,240.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="110" x2="110" y1="226.2969" y2="252.2969"/>
+    
+    <polygon fill="#000000" points="110,316.2969,110,320.2969,100,324.2969,110,328.2969,110,332.2969,120,328.2969,120,324.2969,110,320.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="110" x2="110" y1="306.2969" y2="332.2969"/>
+    
+    <polygon fill="#000000" points="110,396.2969,110,400.2969,100,404.2969,110,408.2969,110,412.2969,120,408.2969,120,404.2969,110,400.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="110" x2="110" y1="386.2969" y2="412.2969"/>
+    
+    <rect fill="#5B9AA0" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="50" y="500"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="60" y="530.9951">Result</text>
+    
+    <polygon fill="#000000" points="110,476.2969,110,480.2969,100,484.2969,110,488.2969,110,492.2969,120,488.2969,120,484.2969,110,480.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="110" x2="110" y1="466.2969" y2="492.2969"/>
+    
+    <!-- Hierarchical Pattern -->
+    <rect fill="#F9D5E5" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="340" y="100"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="350" y="130.9951">Hierarchical</text>
+    
+    <rect fill="#F9D5E5" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="340" y="180"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="350" y="210.9951">Manager</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="200" y="300"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="210" y="330.9951">Specialist 1</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="340" y="300"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="350" y="330.9951">Specialist 2</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="480" y="300"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="490" y="330.9951">Specialist 3</text>
+    
+    <polygon fill="#000000" points="400,156.2969,400,160.2969,390,164.2969,400,168.2969,400,172.2969,410,168.2969,410,164.2969,400,160.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="400" x2="400" y1="146.2969" y2="172.2969"/>
+    
+    <polygon fill="#000000" points="260,280,260,284,250,288,260,292,260,296,270,292,270,288,260,284" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="400" x2="400" y1="226.2969" y2="250"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="400" x2="260" y1="250" y2="250"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="260" x2="260" y1="250" y2="296"/>
+    
+    <polygon fill="#000000" points="400,280,400,284,390,288,400,292,400,296,410,292,410,288,400,284" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="400" x2="400" y1="226.2969" y2="296"/>
+    
+    <polygon fill="#000000" points="540,280,540,284,530,288,540,292,540,296,550,292,550,288,540,284" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="400" x2="400" y1="226.2969" y2="250"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="400" x2="540" y1="250" y2="250"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="540" x2="540" y1="250" y2="296"/>
+    
+    <polygon fill="#000000" points="400,380,400,384,390,388,400,392,400,396,410,392,410,388,400,384" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="260" x2="260" y1="346.2969" y2="370"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="260" x2="400" y1="370" y2="370"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="400" x2="400" y1="346.2969" y2="396"/>
+    
+    <polygon fill="#000000" points="400,380,400,384,390,388,400,392,400,396,410,392,410,388,400,384" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="540" x2="540" y1="346.2969" y2="370"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="540" x2="400" y1="370" y2="370"/>
+    
+    <rect fill="#5B9AA0" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="340" y="500"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="350" y="530.9951">Result</text>
+    
+    <polygon fill="#000000" points="400,476.2969,400,480.2969,390,484.2969,400,488.2969,400,492.2969,410,488.2969,410,484.2969,400,480.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="400" x2="400" y1="396.2969" y2="492.2969"/>
+    
+    <!-- MapReduce Pattern -->
+    <rect fill="#F9D5E5" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="630" y="100"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="640" y="130.9951">MapReduce</text>
+    
+    <rect fill="#F9D5E5" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="630" y="180"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="640" y="210.9951">Input Data</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="490" y="300"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="500" y="330.9951">Agent 1</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="630" y="300"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="640" y="330.9951">Agent 2</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="770" y="300"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="780" y="330.9951">Agent 3</text>
+    
+    <polygon fill="#000000" points="690,156.2969,690,160.2969,680,164.2969,690,168.2969,690,172.2969,700,168.2969,700,164.2969,690,160.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="690" x2="690" y1="146.2969" y2="172.2969"/>
+    
+    <polygon fill="#000000" points="550,280,550,284,540,288,550,292,550,296,560,292,560,288,550,284" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="690" x2="690" y1="226.2969" y2="250"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="690" x2="550" y1="250" y2="250"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="550" x2="550" y1="250" y2="296"/>
+    
+    <polygon fill="#000000" points="690,280,690,284,680,288,690,292,690,296,700,292,700,288,690,284" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="690" x2="690" y1="226.2969" y2="296"/>
+    
+    <polygon fill="#000000" points="830,280,830,284,820,288,830,292,830,296,840,292,840,288,830,284" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="690" x2="690" y1="226.2969" y2="250"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="690" x2="830" y1="250" y2="250"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="830" x2="830" y1="250" y2="296"/>
+    
+    <rect fill="#E06377" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="630" y="400"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="640" y="430.9951">Combiner</text>
+    
+    <polygon fill="#000000" points="690,380,690,384,680,388,690,392,690,396,700,392,700,388,690,384" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="550" x2="550" y1="346.2969" y2="370"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="550" x2="690" y1="370" y2="370"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="690" x2="690" y1="346.2969" y2="396"/>
+    
+    <polygon fill="#000000" points="690,380,690,384,680,388,690,392,690,396,700,392,700,388,690,384" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="830" x2="830" y1="346.2969" y2="370"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="830" x2="690" y1="370" y2="370"/>
+    
+    <rect fill="#5B9AA0" filter="url(#f1h9esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="630" y="500"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="640" y="530.9951">Result</text>
+    
+    <polygon fill="#000000" points="690,476.2969,690,480.2969,680,484.2969,690,488.2969,690,492.2969,700,488.2969,700,484.2969,690,480.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="690" x2="690" y1="446.2969" y2="492.2969"/>
+    
+  </g>
+</svg>

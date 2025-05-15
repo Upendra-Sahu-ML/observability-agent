@@ -8,6 +8,7 @@ from datetime import datetime
 from crewai import Agent, Task, Crew
 from crewai.llm import LLM
 from crewai.tools import tool
+from crewai import process
 from dotenv import load_dotenv
 from common.tools.metric_tools import (
     PrometheusQueryTool,
@@ -42,7 +43,60 @@ class MetricAgent:
         self.prometheus_tool = PrometheusQueryTool(prometheus_url=self.prometheus_url)
         self.metric_analysis_tool = MetricAnalysisTool()
         
-        # Create a crewAI agent for metric analysis
+        # Create specialized agents for different aspects of metric analysis
+        self.system_metrics_analyst = Agent(
+            role="System Metrics Analyst",
+            goal="Analyze system-level metrics to identify resource constraints and bottlenecks",
+            backstory="You specialize in analyzing CPU, memory, disk, and network metrics. You can quickly identify resource exhaustion and saturation points in infrastructure.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.prometheus_tool.query_metrics,
+                self.prometheus_tool.get_cpu_metrics,
+                self.prometheus_tool.get_memory_metrics,
+                self.metric_analysis_tool.analyze_threshold
+            ]
+        )
+        
+        self.application_metrics_analyst = Agent(
+            role="Application Metrics Analyst",
+            goal="Analyze application-specific metrics to identify service issues",
+            backstory="You focus on application metrics like request rates, error rates, and latency. You can pinpoint service degradation and application-level issues.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.prometheus_tool.query_metrics,
+                self.prometheus_tool.get_error_rate,
+                self.prometheus_tool.get_service_health,
+                self.metric_analysis_tool.analyze_metrics
+            ]
+        )
+        
+        self.trend_analyst = Agent(
+            role="Metric Trend Analyst",
+            goal="Analyze metric trends and patterns over time",
+            backstory="You excel at spotting gradual changes, seasonality, and long-term patterns in metrics that might indicate developing problems.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.prometheus_tool.query_metrics,
+                self.metric_analysis_tool.analyze_trend
+            ]
+        )
+        
+        self.anomaly_detector = Agent(
+            role="Metric Anomaly Detector",
+            goal="Detect unusual patterns and outliers in metrics",
+            backstory="You specialize in identifying abnormal metric behavior, sudden spikes, drops, and statistical outliers that could indicate incidents.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.prometheus_tool.query_metrics,
+                self.metric_analysis_tool.analyze_anomalies
+            ]
+        )
+        
+        # Keep the original metric analyzer for backward compatibility
         self.metric_analyzer = Agent(
             role="Metric Analyzer",
             goal="Analyze metric data to identify patterns and anomalies",
@@ -150,8 +204,141 @@ class MetricAgent:
         # Default fallback
         return f"-{minutes_before}m"
     
+    def _create_specialized_metrics_tasks(self, alert):
+        """Create specialized metrics analysis tasks for each analyst"""
+        alert_id = alert.get("alert_id", "unknown")
+        alert_name = alert.get("labels", {}).get("alertname", "Unknown Alert")
+        service = alert.get("labels", {}).get("service", "")
+        namespace = alert.get("labels", {}).get("namespace", "default")
+        instance = alert.get("labels", {}).get("instance", "")
+        
+        # Time range to analyze
+        time_range = self._get_time_range(alert)
+        
+        # Base context information that all analyzers will use
+        base_context = f"""
+        Alert: {alert_name} (ID: {alert_id})
+        Service: {service}
+        Namespace: {namespace}
+        Instance: {instance}
+        Time range to analyze: {time_range} to now
+        """
+        
+        # Determine which metrics to query based on alert name
+        system_metrics = []
+        application_metrics = []
+        
+        # System metrics to analyze
+        if "cpu" in alert_name.lower() or "memory" in alert_name.lower() or "disk" in alert_name.lower():
+            system_metrics.extend([
+                f'cpu_usage_total{{service="{service}"}}',
+                f'memory_usage{{service="{service}"}}',
+                f'memory_limit{{service="{service}"}}',
+                f'disk_usage{{service="{service}"}}',
+                f'node_load{{instance="{instance}"}}'
+            ])
+        else:
+            system_metrics.extend([
+                f'up{{service="{service}"}}',
+                f'cpu_usage_total{{service="{service}"}}',
+                f'memory_usage{{service="{service}"}}'
+            ])
+        
+        # Application metrics to analyze
+        if "latency" in alert_name.lower() or "response" in alert_name.lower() or "error" in alert_name.lower():
+            application_metrics.extend([
+                f'http_request_duration_seconds{{service="{service}"}}',
+                f'http_requests_total{{service="{service}"}}',
+                f'http_errors_total{{service="{service}"}}',
+                f'request_latency{{service="{service}"}}'
+            ])
+        else:
+            application_metrics.extend([
+                f'http_requests_total{{service="{service}"}}',
+                f'http_errors_total{{service="{service}"}}'
+            ])
+        
+        # System metrics analysis task
+        system_task = Task(
+            description=base_context + f"""
+            Focus on analyzing system-level metrics:
+            
+            Use these Prometheus queries to gather data:
+            {', '.join(system_metrics)}
+            
+            Specifically look for:
+            1. Resource exhaustion (CPU, memory, disk)
+            2. System saturation points
+            3. Infrastructure-level bottlenecks
+            4. Hardware or OS-level constraints
+            
+            Provide a detailed analysis of system metrics, focusing on resource utilization and constraints.
+            """,
+            agent=self.system_metrics_analyst,
+            expected_output="A detailed analysis of system-level metrics"
+        )
+        
+        # Application metrics analysis task
+        application_task = Task(
+            description=base_context + f"""
+            Focus on analyzing application-level metrics:
+            
+            Use these Prometheus queries to gather data:
+            {', '.join(application_metrics)}
+            
+            Specifically look for:
+            1. Error rates and patterns
+            2. Latency increases or anomalies
+            3. Request rate changes
+            4. Service health indicators
+            
+            Provide a detailed analysis of application metrics, focusing on service behavior and health.
+            """,
+            agent=self.application_metrics_analyst,
+            expected_output="A detailed analysis of application-level metrics"
+        )
+        
+        # Trend analysis task
+        trend_task = Task(
+            description=base_context + """
+            Focus on analyzing metric trends over time:
+            
+            Specifically look for:
+            1. Gradual increases or decreases
+            2. Cyclical patterns or seasonality
+            3. Long-term trends that may indicate developing issues
+            4. Changes in patterns compared to normal baseline
+            
+            Provide a detailed analysis of metric trends, focusing on how metrics have changed over time.
+            """,
+            agent=self.trend_analyst,
+            expected_output="A detailed analysis of metric trends over time"
+        )
+        
+        # Anomaly detection task
+        anomaly_task = Task(
+            description=base_context + """
+            Focus on detecting anomalies in metrics:
+            
+            Specifically look for:
+            1. Sudden spikes or drops
+            2. Outliers and statistical anomalies
+            3. Unusual combinations of metric values
+            4. Deviation from expected patterns
+            
+            Provide a detailed analysis of metric anomalies, focusing on unusual or unexpected behavior.
+            """,
+            agent=self.anomaly_detector,
+            expected_output="A detailed analysis of metric anomalies"
+        )
+        
+        # Return all specialized tasks and metadata
+        metrics_queries = system_metrics + application_metrics
+        
+        return [system_task, application_task, trend_task, anomaly_task], metrics_queries, time_range
+    
     def _create_metrics_analysis_task(self, alert):
-        """Create a metrics analysis task for the crew"""
+        """Create a metrics analysis task for the crew (backward compatibility)"""
         alert_id = alert.get("alert_id", "unknown")
         alert_name = alert.get("labels", {}).get("alertname", "Unknown Alert")
         service = alert.get("labels", {}).get("service", "")
@@ -219,23 +406,29 @@ class MetricAgent:
         return task, metrics_queries, time_range
     
     async def analyze_metrics(self, alert):
-        """Analyze metrics using crewAI"""
+        """Analyze metrics using multi-agent crewAI"""
         logger.info(f"Analyzing metrics for alert ID: {alert.get('alert_id', 'unknown')}")
         
-        # Create metrics analysis task
-        task, metrics_queries, time_range = self._create_metrics_analysis_task(alert)
+        # Create specialized metrics analysis tasks
+        tasks, metrics_queries, time_range = self._create_specialized_metrics_tasks(alert)
         
-        # Create crew with metric analyzer
+        # Create crew with specialized analyzers
         crew = Crew(
-            agents=[self.metric_analyzer],
-            tasks=[task],
-            verbose=True
+            agents=[
+                self.system_metrics_analyst,
+                self.application_metrics_analyst,
+                self.trend_analyst,
+                self.anomaly_detector
+            ],
+            tasks=tasks,
+            verbose=True,
+            process=process.MapReduce()  # Run analyses in parallel and combine results
         )
         
         # Execute crew analysis
         result = crew.kickoff()
         
-        # Return both the analysis result and some metadata about what was analyzed
+        # Return both the analysis result and metadata
         metrics_data = {
             "queries": metrics_queries,
             "time_range": time_range,

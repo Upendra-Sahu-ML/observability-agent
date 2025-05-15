@@ -8,6 +8,7 @@ from datetime import datetime
 from crewai import Agent, Task, Crew
 from crewai.llm import LLM
 from crewai.tools import tool
+from crewai import process
 from dotenv import load_dotenv
 from common.tools.runbook_tools import (
     RunbookSearchTool,
@@ -42,7 +43,53 @@ class RunbookAgent:
         self.runbook_search_tool = RunbookSearchTool(runbook_dir=self.runbook_dir)
         self.runbook_execution_tool = RunbookExecutionTool()
         
-        # Create a crewAI agent for runbook execution
+        # Create specialized agents for different aspects of runbook management
+        self.runbook_finder = Agent(
+            role="Runbook Finder",
+            goal="Find the most relevant existing runbooks for a given incident",
+            backstory="You excel at searching, categorizing, and selecting the most appropriate runbooks from the knowledge base based on incident details and root cause analysis.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.runbook_search_tool.search_runbooks,
+                self.runbook_search_tool.get_runbook_by_alert
+            ]
+        )
+        
+        self.runbook_adapter = Agent(
+            role="Runbook Adapter",
+            goal="Adapt and enhance existing runbooks for the specific incident context",
+            backstory="You specialize in customizing generic runbooks to address the specific details and nuances of the current incident based on root cause analysis.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.runbook_execution_tool.generate_custom_runbook
+            ]
+        )
+        
+        self.runbook_validator = Agent(
+            role="Runbook Validator",
+            goal="Validate runbook steps and ensure they will resolve the incident",
+            backstory="You carefully review runbook steps for completeness, correctness, and safety. You ensure the steps directly address the root cause and include verification methods.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.runbook_execution_tool.track_execution
+            ]
+        )
+        
+        self.automation_expert = Agent(
+            role="Automation Expert",
+            goal="Automate runbook execution where possible and provide clear execution instructions",
+            backstory="You excel at determining which runbook steps can be automated and preparing detailed instructions for steps that require human intervention.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.runbook_execution_tool.execute_runbook
+            ]
+        )
+        
+        # Keep the original runbook executor for backward compatibility
         self.runbook_executor = Agent(
             role="Runbook Executor",
             goal="Find and execute appropriate runbooks for incident resolution",
@@ -180,8 +227,99 @@ class RunbookAgent:
             await sub.unsubscribe()
             return {"alert_id": alert_id, "error": "Timeout waiting for data"}
     
+    def _create_specialized_runbook_tasks(self, root_cause_data, alert_data):
+        """Create specialized runbook tasks for the crew"""
+        alert_id = root_cause_data.get("alert_id", "unknown")
+        root_cause = root_cause_data.get("root_cause", "Unknown root cause")
+        
+        # Extract details from alert data
+        service = alert_data.get("labels", {}).get("service", "unknown")
+        severity = alert_data.get("labels", {}).get("severity", "unknown")
+        description = alert_data.get("annotations", {}).get("description", "No description provided")
+        
+        # Common incident information for all agents
+        incident_info = f"""
+        ## Alert Information
+        - Alert ID: {alert_id}
+        - Service: {service}
+        - Severity: {severity}
+        - Description: {description}
+        
+        ## Root Cause Analysis
+        {root_cause}
+        """
+        
+        # Task for finding relevant runbooks
+        finder_task = Task(
+            description=incident_info + """
+            Search for runbooks that are relevant to this incident. Focus on:
+            1. Runbooks specific to this service or similar services
+            2. Runbooks addressing similar root causes or symptoms
+            3. Runbooks that match the technical components mentioned in the root cause analysis
+            
+            Return:
+            1. A list of relevant runbooks with brief descriptions
+            2. The full content of the most relevant runbook
+            3. An explanation of why you selected these runbooks
+            """,
+            agent=self.runbook_finder,
+            expected_output="A detailed list of relevant runbooks and the content of the most applicable one"
+        )
+        
+        # Task for adapting runbooks
+        adapter_task = Task(
+            description="""
+            Based on the runbooks found by the Runbook Finder, adapt them to the specific incident context.
+            
+            1. Modify generic steps to address the specific root cause identified
+            2. Add any missing steps necessary for this particular incident
+            3. Remove any steps that are not applicable
+            4. Ensure the steps directly address the identified root cause
+            
+            Return a customized runbook with detailed step-by-step instructions.
+            """,
+            agent=self.runbook_adapter,
+            expected_output="A customized runbook specifically adapted for this incident"
+        )
+        
+        # Task for validating runbook steps
+        validator_task = Task(
+            description="""
+            Review and validate the customized runbook:
+            
+            1. Verify that each step is technically correct and safe to execute
+            2. Ensure the steps directly address the identified root cause
+            3. Confirm that the steps are ordered logically
+            4. Add verification steps after each major action
+            5. Identify any potential risks or side effects
+            
+            Return the validated runbook with any necessary corrections and added verification steps.
+            """,
+            agent=self.runbook_validator,
+            expected_output="A validated and improved runbook with verification steps"
+        )
+        
+        # Task for automation recommendations
+        automation_task = Task(
+            description="""
+            Analyze the validated runbook and:
+            
+            1. Identify which steps can be safely automated
+            2. Provide detailed execution instructions for steps requiring human intervention
+            3. Include commands and scripts for automation where applicable
+            4. Format the final runbook for easy execution by on-call engineers
+            
+            Return the final runbook with automation recommendations and detailed execution instructions.
+            """,
+            agent=self.automation_expert,
+            expected_output="A final runbook with automation recommendations and execution instructions"
+        )
+        
+        # Return all specialized tasks
+        return [finder_task, adapter_task, validator_task, automation_task]
+    
     def _create_runbook_task(self, root_cause_data, alert_data):
-        """Create a runbook generation task for the crew"""
+        """Create a runbook generation task for the crew (backward compatibility)"""
         alert_id = root_cause_data.get("alert_id", "unknown")
         root_cause = root_cause_data.get("root_cause", "Unknown root cause")
         
@@ -217,17 +355,23 @@ class RunbookAgent:
         return task
     
     async def generate_runbook(self, root_cause_data, alert_data):
-        """Generate an enhanced runbook based on root cause analysis"""
+        """Generate an enhanced runbook using multi-agent crewAI"""
         logger.info(f"Generating runbook for alert ID: {root_cause_data.get('alert_id', 'unknown')}")
         
-        # Create runbook task
-        runbook_task = self._create_runbook_task(root_cause_data, alert_data)
+        # Create specialized runbook tasks
+        specialized_tasks = self._create_specialized_runbook_tasks(root_cause_data, alert_data)
         
-        # Create crew with runbook manager
+        # Create crew with specialized agents
         crew = Crew(
-            agents=[self.runbook_executor],
-            tasks=[runbook_task],
-            verbose=True
+            agents=[
+                self.runbook_finder,
+                self.runbook_adapter,
+                self.runbook_validator,
+                self.automation_expert
+            ],
+            tasks=specialized_tasks,
+            verbose=True,
+            process=process.Sequential()
         )
         
         # Execute crew analysis

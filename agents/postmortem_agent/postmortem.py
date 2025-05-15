@@ -8,6 +8,7 @@ from datetime import datetime
 from crewai import Agent, Task, Crew
 from crewai.llm import LLM
 from crewai.tools import tool
+from crewai import process
 from dotenv import load_dotenv
 from common.tools.knowledge_tools import PostmortemTemplateTool, PostmortemGeneratorTool, RunbookUpdateTool
 
@@ -40,7 +41,68 @@ class PostmortemAgent:
         self.generator_tool = PostmortemGeneratorTool()
         self.runbook_update_tool = RunbookUpdateTool()
         
-        # Create a crewAI agent for postmortem generation
+        # Create specialized agents for different aspects of postmortem generation
+        self.technical_analyst = Agent(
+            role="Technical Incident Analyst",
+            goal="Analyze technical details of incidents and determine precise root causes",
+            backstory="You are an expert at parsing technical incident data and determining exact root causes with supporting evidence.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.template_tool.get_template,
+                self.generator_tool.generate_postmortem
+            ]
+        )
+        
+        self.impact_analyst = Agent(
+            role="Business Impact Analyst",
+            goal="Assess the business and user impact of incidents",
+            backstory="You specialize in determining how incidents affect business operations, customers, and revenue.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.template_tool.get_template,
+                self.generator_tool.generate_postmortem
+            ]
+        )
+        
+        self.timeline_constructor = Agent(
+            role="Incident Timeline Constructor",
+            goal="Create detailed chronological timelines of incidents",
+            backstory="You excel at organizing events in chronological order and identifying key inflection points during incidents.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.template_tool.get_template,
+                self.generator_tool.generate_postmortem
+            ]
+        )
+        
+        self.remediation_planner = Agent(
+            role="Remediation Planner",
+            goal="Develop comprehensive plans to prevent future incidents",
+            backstory="You are an expert at converting incident learnings into actionable prevention plans and concrete followup items.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.runbook_update_tool.update_runbook,
+                self.runbook_update_tool.create_runbook
+            ]
+        )
+        
+        self.postmortem_editor = Agent(
+            role="Postmortem Editor",
+            goal="Create clear, comprehensive postmortem documents that synthesize all analyses",
+            backstory="You excel at combining technical details, timelines, impact assessments, and remediation plans into cohesive, well-structured documents.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.template_tool.fill_template,
+                self.generator_tool.generate_postmortem
+            ]
+        )
+        
+        # Keep the original postmortem generator for backward compatibility
         self.postmortem_generator_agent = Agent(
             role="Postmortem Generator",
             goal="Generate comprehensive postmortem documents for incidents",
@@ -150,8 +212,118 @@ class PostmortemAgent:
             await sub.unsubscribe()
             return {"alert_id": alert_id, "error": "Timeout waiting for data"}
     
+    def _create_specialized_postmortem_tasks(self, root_cause_data, alert_data):
+        """Create specialized postmortem generation tasks for each analyst"""
+        alert_id = root_cause_data.get("alert_id", "unknown")
+        root_cause = root_cause_data.get("root_cause", "Unknown root cause")
+        
+        # Extract details from alert data
+        service = alert_data.get("labels", {}).get("service", "unknown")
+        severity = alert_data.get("labels", {}).get("severity", "unknown")
+        description = alert_data.get("annotations", {}).get("description", "No description provided")
+        
+        # Common incident information that all agents will use
+        incident_info = f"""
+        ## Incident Information
+        - Incident ID: {alert_id}
+        - Service: {service}
+        - Severity: {severity}
+        - Description: {description}
+        
+        ## Root Cause Analysis
+        {root_cause}
+        """
+        
+        # Task for technical analysis
+        technical_task = Task(
+            description=incident_info + """
+            Analyze the technical aspects of this incident:
+            1. Identify the exact technical root cause and failure mechanisms
+            2. Determine which systems and components were involved
+            3. Explain how the systems failed and interacted during the incident
+            4. Identify any technical debt or system limitations that contributed
+            
+            Format your analysis in markdown format, focusing on technical precision.
+            """,
+            agent=self.technical_analyst,
+            expected_output="A technical analysis section for the postmortem"
+        )
+        
+        # Task for impact analysis
+        impact_task = Task(
+            description=incident_info + """
+            Analyze the business and user impact of this incident:
+            1. Determine which users or customers were affected and how
+            2. Quantify the impact (e.g., downtime, errors, latency)
+            3. Assess any financial, reputation, or compliance implications
+            4. Identify any customer or stakeholder communications needed
+            
+            Format your analysis in markdown format, focusing on clear impact statements.
+            """,
+            agent=self.impact_analyst,
+            expected_output="An impact analysis section for the postmortem"
+        )
+        
+        # Task for timeline construction
+        timeline_task = Task(
+            description=incident_info + """
+            Construct a detailed timeline of this incident:
+            1. When the incident began (based on available evidence)
+            2. When it was detected and by what means
+            3. Key actions taken during response
+            4. Resolution timing and verification
+            
+            Present this as a chronological timeline in markdown format.
+            """,
+            agent=self.timeline_constructor,
+            expected_output="A detailed incident timeline section for the postmortem"
+        )
+        
+        # Task for remediation planning
+        remediation_task = Task(
+            description=incident_info + """
+            Develop a comprehensive remediation and prevention plan:
+            1. Immediate actions needed to prevent recurrence
+            2. Medium-term improvements to increase resilience
+            3. Long-term architectural or process changes
+            4. Specific, actionable follow-up items with suggested owners
+            
+            Format your plan in markdown with clear, actionable items.
+            """,
+            agent=self.remediation_planner,
+            expected_output="A remediation and prevention plan section for the postmortem"
+        )
+        
+        # Task for final document compilation
+        editor_task = Task(
+            description="""
+            As the Postmortem Editor, you will receive analyses from four specialists:
+            1. Technical analysis of the root cause
+            2. Business and user impact assessment
+            3. Detailed incident timeline
+            4. Remediation and prevention plan
+            
+            Your job is to compile these into a cohesive, well-structured postmortem document following this outline:
+            1. Executive Summary - A brief overview synthesizing key points from all analyses
+            2. Incident Timeline - From the timeline constructor
+            3. Technical Root Cause - From the technical analyst
+            4. Impact Assessment - From the impact analyst
+            5. Mitigation Steps - Based on the timeline and technical analysis
+            6. Prevention Measures - From the remediation planner
+            7. Lessons Learned - Synthesize insights from all sections
+            8. Action Items - From the remediation planner, organized by priority
+            
+            Format the document in professional Markdown format.
+            """,
+            agent=self.postmortem_editor,
+            expected_output="A complete, well-structured postmortem document"
+        )
+        
+        # Return all specialized tasks
+        return [technical_task, impact_task, timeline_task, remediation_task, editor_task]
+    
     def _create_postmortem_task(self, root_cause_data, alert_data):
-        """Create a postmortem generation task for the crew"""
+        """Create a postmortem generation task for the crew (backward compatibility)"""
         alert_id = root_cause_data.get("alert_id", "unknown")
         root_cause = root_cause_data.get("root_cause", "Unknown root cause")
         
@@ -193,17 +365,24 @@ class PostmortemAgent:
         return task
     
     async def generate_postmortem(self, root_cause_data, alert_data):
-        """Generate a postmortem document based on root cause analysis"""
+        """Generate a postmortem document using multi-agent crewAI"""
         logger.info(f"Generating postmortem for alert ID: {root_cause_data.get('alert_id', 'unknown')}")
         
-        # Create postmortem task
-        postmortem_task = self._create_postmortem_task(root_cause_data, alert_data)
+        # Create specialized postmortem tasks
+        specialized_tasks = self._create_specialized_postmortem_tasks(root_cause_data, alert_data)
         
-        # Create crew with postmortem writer
+        # Create crew with specialized agents and sequential process
         crew = Crew(
-            agents=[self.postmortem_generator_agent],
-            tasks=[postmortem_task],
-            verbose=True
+            agents=[
+                self.technical_analyst,
+                self.impact_analyst,
+                self.timeline_constructor,
+                self.remediation_planner,
+                self.postmortem_editor
+            ],
+            tasks=specialized_tasks,
+            verbose=True,
+            process=process.Sequential()
         )
         
         # Execute crew analysis

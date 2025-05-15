@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="500px" preserveAspectRatio="none" style="width:700px;height:500px;background:#FFFFFF;" version="1.1" viewBox="0 0 700 500" width="700px" zoomAndPan="magnify">
+  <defs>
+    <filter height="300%" id="f1wt26ljkqioi1" width="300%" x="-1" y="-1">
+      <feGaussianBlur result="blurOut" stdDeviation="2.0"/>
+      <feColorMatrix in="blurOut" result="blurOut2" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .4 0"/>
+      <feOffset dx="4.0" dy="4.0" in="blurOut2" result="blurOut3"/>
+      <feBlend in="SourceGraphic" in2="blurOut3" mode="normal"/>
+    </filter>
+  </defs>
+  <g>
+    <!-- Title -->
+    <text fill="#000000" font-family="sans-serif" font-size="18" lengthAdjust="spacing" textLength="220" x="240" y="28.708">Metric Agent Architecture</text>
+    
+    <!-- Input -->
+    <rect fill="#F9D5E5" filter="url(#f1wt26ljkqioi1)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="290" y="50"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="300" y="80.9951">Alert</text>
+    
+    <!-- Main Agent -->
+    <rect fill="#F9D5E5" filter="url(#f1wt26ljkqioi1)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="290" y="130"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="300" y="160.9951">Metric Agent</text>
+    
+    <!-- Sub Agents -->
+    <rect fill="#EEAC99" filter="url(#f1wt26ljkqioi1)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="160" x="130" y="230"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="140" x="140" y="260.9951">System Analyst</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1wt26ljkqioi1)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="160" x="410" y="230"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="140" x="420" y="260.9951">Application Analyst</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1wt26ljkqioi1)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="160" x="130" y="310"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="140" x="140" y="340.9951">Trend Analyst</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1wt26ljkqioi1)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="160" x="410" y="310"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="140" x="420" y="340.9951">Anomaly Detector</text>
+    
+    <!-- Combiner -->
+    <rect fill="#E06377" filter="url(#f1wt26ljkqioi1)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="160" x="270" y="390"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="140" x="280" y="420.9951">MapReduce Synthesis</text>
+    
+    <!-- Result -->
+    <rect fill="#5B9AA0" filter="url(#f1wt26ljkqioi1)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="200" x="250" y="450"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="180" x="260" y="480.9951">Comprehensive Analysis</text>
+    
+    <!-- Connections -->
+    <polygon fill="#000000" points="350,106.2969,350,110.2969,340,114.2969,350,118.2969,350,122.2969,360,118.2969,360,114.2969,350,110.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="96.2969" y2="122.2969"/>
+    
+    <!-- Connections to sub-agents -->
+    <polygon fill="#000000" points="210,210,210,214,200,218,210,222,210,226,220,222,220,218,210,214" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="176.2969" y2="195"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="210" y1="195" y2="195"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="210" x2="210" y1="195" y2="226"/>
+    
+    <polygon fill="#000000" points="490,210,490,214,480,218,490,222,490,226,500,222,500,218,490,214" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="176.2969" y2="195"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="490" y1="195" y2="195"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="490" x2="490" y1="195" y2="226"/>
+    
+    <polygon fill="#000000" points="210,290,210,294,200,298,210,302,210,306,220,302,220,298,210,294" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="176.2969" y2="195"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="210" y1="195" y2="195"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="210" x2="210" y1="276.2969" y2="306"/>
+    
+    <polygon fill="#000000" points="490,290,490,294,480,298,490,302,490,306,500,302,500,298,490,294" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="176.2969" y2="195"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="490" y1="195" y2="195"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="490" x2="490" y1="276.2969" y2="306"/>
+    
+    <!-- Connections to combiner -->
+    <polygon fill="#000000" points="350,370,350,374,340,378,350,382,350,386,360,382,360,378,350,374" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="210" x2="210" y1="276.2969" y2="370"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="210" x2="350" y1="370" y2="370"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="356.2969" y2="386"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="100" x="240" y="365.0669">Parallel Analysis</text>
+    
+    <polygon fill="#000000" points="350,370,350,374,340,378,350,382,350,386,360,382,360,378,350,374" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="490" x2="490" y1="276.2969" y2="370"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="490" x2="350" y1="370" y2="370"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="100" x="380" y="365.0669">Parallel Analysis</text>
+    
+    <!-- Connections to result -->
+    <polygon fill="#000000" points="350,436.2969,350,440.2969,340,444.2969,350,448.2969,350,452.2969,360,448.2969,360,444.2969,350,440.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="436.2969" y2="450"/>
+  </g>
+</svg>

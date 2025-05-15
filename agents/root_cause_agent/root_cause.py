@@ -8,6 +8,7 @@ from datetime import datetime
 from crewai import Agent, Task, Crew
 from crewai.llm import LLM
 from crewai.tools import tool
+from crewai import process
 from dotenv import load_dotenv
 from common.tools.root_cause_tools import correlation_analysis, dependency_analysis
 
@@ -32,7 +33,52 @@ class RootCauseAgent:
         # Initialize OpenAI model
         self.llm = LLM(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
         
-        # Create a crewAI agent for root cause analysis
+        # Create specialized agents for root cause analysis
+        self.infrastructure_analyzer = Agent(
+            role="Infrastructure Analyst",
+            goal="Identify infrastructure-related causes of incidents",
+            backstory="You analyze server, network, load balancer, and cloud infrastructure issues. You focus on hardware and system-level problems that could cause outages or performance degradation.",
+            verbose=True,
+            llm=self.llm,
+            tools=[correlation_analysis, dependency_analysis]
+        )
+        
+        self.application_analyzer = Agent(
+            role="Application Analyst",
+            goal="Identify application-level causes of incidents",
+            backstory="You analyze code-level, memory, and runtime issues in applications. You focus on application bugs, memory leaks, and code performance problems.",
+            verbose=True,
+            llm=self.llm,
+            tools=[correlation_analysis, dependency_analysis]
+        )
+        
+        self.database_analyzer = Agent(
+            role="Database Analyst",
+            goal="Identify database-related causes of incidents",
+            backstory="You analyze database performance, query issues, and data storage problems. You focus on slow queries, locking, and database resource constraints.",
+            verbose=True,
+            llm=self.llm,
+            tools=[correlation_analysis, dependency_analysis]
+        )
+        
+        self.network_analyzer = Agent(
+            role="Network Analyst",
+            goal="Identify network and connectivity causes of incidents",
+            backstory="You analyze network connections, latency issues, and routing problems. You focus on connectivity failures, DNS issues, and network throughput.",
+            verbose=True,
+            llm=self.llm,
+            tools=[correlation_analysis, dependency_analysis]
+        )
+        
+        self.root_cause_manager = Agent(
+            role="Root Cause Manager",
+            goal="Synthesize analysis from specialized agents to determine the most likely root cause",
+            backstory="You are an expert at managing root cause investigations, coordinating different specialists, and synthesizing their findings into a comprehensive analysis.",
+            verbose=True,
+            llm=self.llm
+        )
+        
+        # Keep the original root cause analyzer for backward compatibility
         self.root_cause_analyzer = Agent(
             role="Root Cause Analyzer",
             goal="Identify the root cause of system issues by analyzing correlations and dependencies",
@@ -86,8 +132,143 @@ class RootCauseAgent:
         """Get current timestamp in ISO format"""
         return datetime.utcnow().isoformat() + "Z"
     
+    def _create_specialized_root_cause_tasks(self, data):
+        """Create specialized root cause analysis tasks for each analyst"""
+        alert_id = data.get("alert_id", "unknown")
+        alert_data = data.get("alert", {})
+        metric_data = data.get("metrics", {})
+        log_data = data.get("logs", {})
+        tracing_data = data.get("tracing", {})
+        deployment_data = data.get("deployments", {})
+        
+        # Check if we're working with partial data
+        partial_data = data.get("partial_data", False)
+        missing_agents = data.get("missing_agents", [])
+        
+        # Prepare base data description that all agents will use
+        base_data_description = f"""
+        ## Alert Information
+        - Alert ID: {alert_id}
+        - Alert Name: {alert_data.get('labels', {}).get('alertname', 'Unknown')}
+        - Service: {alert_data.get('labels', {}).get('service', 'Unknown')}
+        - Severity: {alert_data.get('labels', {}).get('severity', 'Unknown')}
+        - Timestamp: {alert_data.get('startsAt', 'Unknown')}
+        
+        ## Metric Agent Analysis
+        {metric_data.get('analysis', 'No metric data available' if 'metric' in missing_agents else 'No analysis provided')}
+        
+        ## Log Agent Analysis
+        {log_data.get('analysis', 'No log data available' if 'log' in missing_agents else 'No analysis provided')}
+        
+        ## Tracing Agent Analysis
+        {tracing_data.get('analysis', 'No tracing data available' if 'tracing' in missing_agents else 'No analysis provided')}
+        
+        ## Deployment Agent Analysis
+        {deployment_data.get('analysis', 'No deployment data available' if 'deployment' in missing_agents else 'No analysis provided')}
+        """
+        
+        # Infrastructure task
+        infrastructure_task = Task(
+            description=base_data_description + """
+            Based on this data, analyze for infrastructure-related root causes. Focus on:
+            - Hardware or system-level failures
+            - Resource exhaustion (CPU, memory, disk)
+            - Cloud infrastructure issues
+            - Load balancer or proxy problems
+            - Operating system issues
+            
+            Return your analysis with:
+            1. Potential infrastructure causes
+            2. Confidence level for each cause
+            3. Supporting evidence from the data
+            4. Remediation recommendations
+            """,
+            agent=self.infrastructure_analyzer,
+            expected_output="An analysis of potential infrastructure-related root causes"
+        )
+        
+        # Application task
+        application_task = Task(
+            description=base_data_description + """
+            Based on this data, analyze for application-related root causes. Focus on:
+            - Code bugs or exceptions
+            - Memory leaks or garbage collection issues
+            - Application performance bottlenecks
+            - Runtime configuration problems
+            - Threading or concurrency issues
+            
+            Return your analysis with:
+            1. Potential application causes
+            2. Confidence level for each cause
+            3. Supporting evidence from the data
+            4. Remediation recommendations
+            """,
+            agent=self.application_analyzer,
+            expected_output="An analysis of potential application-related root causes"
+        )
+        
+        # Database task
+        database_task = Task(
+            description=base_data_description + """
+            Based on this data, analyze for database-related root causes. Focus on:
+            - Slow queries or inefficient database operations
+            - Database locking or blocking issues
+            - Schema or data model problems
+            - Database resource constraints
+            - Connection pool issues
+            
+            Return your analysis with:
+            1. Potential database causes
+            2. Confidence level for each cause
+            3. Supporting evidence from the data
+            4. Remediation recommendations
+            """,
+            agent=self.database_analyzer,
+            expected_output="An analysis of potential database-related root causes"
+        )
+        
+        # Network task
+        network_task = Task(
+            description=base_data_description + """
+            Based on this data, analyze for network-related root causes. Focus on:
+            - Network connectivity failures
+            - DNS resolution issues
+            - Latency or throughput problems
+            - Service mesh or network routing issues
+            - Network security or firewall problems
+            
+            Return your analysis with:
+            1. Potential network causes
+            2. Confidence level for each cause
+            3. Supporting evidence from the data
+            4. Remediation recommendations
+            """,
+            agent=self.network_analyzer,
+            expected_output="An analysis of potential network-related root causes"
+        )
+        
+        # Manager task (synthesize results)
+        manager_task = Task(
+            description="""
+            Synthesize the analyses from the specialized root cause agents to determine the most likely root cause.
+            Review all evidence and evaluate the confidence levels provided by each specialist.
+            
+            Return your final analysis in the following format:
+            1. Identified Root Cause - A clear statement of what caused the incident
+            2. Confidence Level - How confident you are in this assessment (low, medium, high)
+            3. Supporting Evidence - Key data points that support your conclusion
+            4. Recommended Actions - Suggested steps to resolve the issue
+            5. Prevention - How to prevent similar incidents in the future
+            """,
+            agent=self.root_cause_manager,
+            expected_output="A comprehensive root cause analysis with recommended actions"
+        )
+        
+        # Return all specialized tasks
+        return [infrastructure_task, application_task, database_task, network_task, manager_task]
+    
     def _create_root_cause_task(self, data):
-        """Create a root cause analysis task for the crew"""
+        """Create a root cause analysis task for the crew (backward compatibility)"""
         alert_id = data.get("alert_id", "unknown")
         alert_data = data.get("alert", {})
         metric_data = data.get("metrics", {})
@@ -143,17 +324,24 @@ class RootCauseAgent:
         return task
     
     async def analyze_root_cause(self, data):
-        """Analyze root cause using crewAI"""
+        """Analyze root cause using multi-agent crewAI"""
         logger.info(f"Analyzing root cause for alert ID: {data.get('alert_id', 'unknown')}")
         
-        # Create root cause task
-        root_cause_task = self._create_root_cause_task(data)
+        # Create specialized root cause tasks
+        specialized_tasks = self._create_specialized_root_cause_tasks(data)
         
-        # Create crew with root cause analyzer
+        # Create crew with specialized analyzers
         crew = Crew(
-            agents=[self.root_cause_analyzer],
-            tasks=[root_cause_task],
-            verbose=True
+            agents=[
+                self.infrastructure_analyzer,
+                self.application_analyzer,
+                self.database_analyzer,
+                self.network_analyzer,
+                self.root_cause_manager
+            ],
+            tasks=specialized_tasks,
+            verbose=True,
+            process=process.Hierarchical(manager=self.root_cause_manager)
         )
         
         # Execute crew analysis
