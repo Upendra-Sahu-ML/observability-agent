@@ -23,7 +23,7 @@ spec:
       {{- end }}
       containers:
         - name: orchestrator
-          image: "{{ .Values.orchestrator.image.repository }}:{{ .Values.orchestrator.image.tag | default "latest" }}"
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.orchestrator.image.repository }}:{{ .Values.orchestrator.image.tag | default "latest" }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           env:
             - name: OPENAI_API_KEY
@@ -34,24 +34,24 @@ spec:
             - name: OPENAI_MODEL
               value: {{ .Values.openai.model | default "gpt-4" | quote }}
             - name: NATS_URL
-              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
+              value: nats://{{ include "observability-agent.fullname" . }}-nats:4222
             # Add environment variables to specify which agents are available
             - name: METRIC_AGENT_ENABLED
-              value: "{{ .Values.agents.enabled.metric }}"
+              value: {{ .Values.agents.enabled.metric | quote }}
             - name: LOG_AGENT_ENABLED
-              value: "{{ .Values.agents.enabled.log }}"
+              value: {{ .Values.agents.enabled.log | quote }}
             - name: DEPLOYMENT_AGENT_ENABLED
-              value: "{{ .Values.agents.enabled.deployment }}"
+              value: {{ .Values.agents.enabled.deployment | quote }}
             - name: TRACING_AGENT_ENABLED
-              value: "{{ .Values.agents.enabled.tracing }}"
+              value: {{ .Values.agents.enabled.tracing | quote }}
             - name: ROOT_CAUSE_AGENT_ENABLED
-              value: "{{ .Values.agents.enabled.rootCause }}"
+              value: {{ .Values.agents.enabled.rootCause | quote }}
             - name: RUNBOOK_AGENT_ENABLED
-              value: "{{ .Values.agents.enabled.runbook }}"
+              value: {{ .Values.agents.enabled.runbook | quote }}
             - name: NOTIFICATION_AGENT_ENABLED
-              value: "{{ .Values.agents.enabled.notification }}"
+              value: {{ .Values.agents.enabled.notification | quote }}
             - name: POSTMORTEM_AGENT_ENABLED
-              value: "{{ .Values.agents.enabled.postmortem }}"
+              value: {{ .Values.agents.enabled.postmortem | quote }}
             {{- range .Values.agents.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

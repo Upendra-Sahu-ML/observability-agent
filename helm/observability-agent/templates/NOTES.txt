@@ -8,6 +8,16 @@ The observability-agent system is now deploying with the following components:
   - Log Agent (connecting to Loki at {{ .Values.logAgent.loki.url }})
   - Deployment Agent
   - Root Cause Agent
+  - Tracing Agent
+  - Notification Agent
+  - Postmortem Agent
+  - Runbook Agent
+  - UI Backend
+  - UI
+  - K8s Command Backend
+{{- if .Values.mongodb.enabled }}
+  - MongoDB (used for K8s Command Backend)
+{{- end }}
 {{- if .Values.redis.enabled }}
   - Redis (used for inter-agent communication)
 {{- else }}
@@ -25,6 +35,21 @@ To test the system, you can send an alert message to the Orchestrator by using:
 
 kubectl port-forward svc/{{ include "observability-agent.fullname" . }}-nats 4222:4222
 # Use nats CLI or another NATS client to publish messages
+
+To access the UI:
+
+kubectl port-forward svc/{{ include "observability-agent.fullname" . }}-ui 8080:80
+# Then open http://localhost:8080 in your browser
+
+To access the UI Backend API directly:
+
+kubectl port-forward svc/{{ include "observability-agent.fullname" . }}-ui-backend 5000:5000
+# Then use http://localhost:5000/api endpoints
+
+To access the K8s Command Backend API directly:
+
+kubectl port-forward svc/{{ include "observability-agent.fullname" . }}-k8s-command-backend 5002:5002
+# Then use http://localhost:5002/api endpoints
 
 For more information on how to use the Observability Agent, please see:
 https://github.com/yourusername/observability-agent

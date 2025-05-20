@@ -17,13 +17,14 @@ spec:
         {{- include "observability-agent.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: deployment-agent
     spec:
+      serviceAccountName: {{ include "observability-agent.fullname" . }}-deployment-agent
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: deployment-agent
-          image: "{{ .Values.deploymentAgent.image.repository }}:{{ .Values.deploymentAgent.image.tag | default "latest" }}"
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.deploymentAgent.image.repository }}:{{ .Values.deploymentAgent.image.tag | default "latest" }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           env:
             - name: OPENAI_API_KEY
@@ -38,7 +39,7 @@ spec:
             - name: GIT_REPO_PATH
               value: {{ .Values.deploymentAgent.gitRepoPath | default "/app/repo" | quote }}
             - name: NATS_URL
-              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
+              value: nats://{{ include "observability-agent.fullname" . }}-nats:4222
             {{- range .Values.agents.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

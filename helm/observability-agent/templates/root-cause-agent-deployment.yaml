@@ -23,7 +23,7 @@ spec:
       {{- end }}
       containers:
         - name: root-cause-agent
-          image: "{{ .Values.rootCauseAgent.image.repository }}:{{ .Values.rootCauseAgent.image.tag | default "latest" }}"
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.rootCauseAgent.image.repository }}:{{ .Values.rootCauseAgent.image.tag | default "latest" }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           env:
             - name: OPENAI_API_KEY
@@ -36,7 +36,7 @@ spec:
             - name: QDRANT_URL
               value: {{ .Values.knowledgeBase.qdrant.url | default (printf "http://%s-qdrant:6333" (include "observability-agent.fullname" .)) | quote }}
             - name: NATS_URL
-              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
+              value: nats://{{ include "observability-agent.fullname" . }}-nats:4222
             {{- range .Values.agents.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

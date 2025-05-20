@@ -24,7 +24,7 @@ spec:
       {{- end }}
       containers:
         - name: notification-agent
-          image: "{{ .Values.notificationAgent.image.repository }}:{{ .Values.notificationAgent.image.tag | default "latest" }}"
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.notificationAgent.image.repository }}:{{ .Values.notificationAgent.image.tag | default "latest" }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           env:
             - name: OPENAI_API_KEY
@@ -35,7 +35,7 @@ spec:
             - name: OPENAI_MODEL
               value: {{ .Values.openai.model | default "gpt-4" | quote }}
             - name: NATS_URL
-              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
+              value: nats://{{ include "observability-agent.fullname" . }}-nats:4222
             {{- range .Values.agents.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

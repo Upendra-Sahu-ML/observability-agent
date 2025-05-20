@@ -24,7 +24,7 @@ spec:
       {{- end }}
       containers:
         - name: postmortem-agent
-          image: "{{ .Values.postmortemAgent.image.repository }}:{{ .Values.postmortemAgent.image.tag | default "latest" }}"
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.postmortemAgent.image.repository }}:{{ .Values.postmortemAgent.image.tag | default "latest" }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           env:
             - name: OPENAI_API_KEY
@@ -37,7 +37,7 @@ spec:
             - name: TEMPLATE_DIR
               value: {{ .Values.knowledgeBase.postmortemTemplateDir | default "/app/templates" | quote }}
             - name: NATS_URL
-              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
+              value: nats://{{ include "observability-agent.fullname" . }}-nats:4222
             {{- range .Values.agents.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

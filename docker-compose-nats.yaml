@@ -12,5 +12,66 @@ services:
     environment:
       - NATS_SERVER_NAME=local-nats
 
+  mongodb:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=k8s-command
+
+  k8s_command_backend:
+    build: ./ui/k8s-command-backend
+    ports:
+      - "5002:5002"
+    depends_on:
+      - nats
+      - mongodb
+    volumes:
+      - ${HOME}/.kube:/root/.kube:ro
+    environment:
+      - NATS_URL=nats://nats:4222
+      - MONGODB_URI=mongodb://mongodb:27017/k8s-command
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - KUBECONFIG=/root/.kube/config
+
+  runbook_agent:
+    build: ./agents/runbook_agent
+    depends_on:
+      - nats
+    volumes:
+      - ${HOME}/.kube:/root/.kube:ro
+    environment:
+      - NATS_URL=nats://nats:4222
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - KUBECONFIG=/root/.kube/config
+
+  deployment_agent:
+    build: ./agents/deployment_agent
+    depends_on:
+      - nats
+    volumes:
+      - ${HOME}/.kube:/root/.kube:ro
+    environment:
+      - NATS_URL=nats://nats:4222
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - KUBECONFIG=/root/.kube/config
+
+  log_agent:
+    build: ./agents/log_agent
+    depends_on:
+      - nats
+    volumes:
+      - ${HOME}/.kube:/root/.kube:ro
+    environment:
+      - NATS_URL=nats://nats:4222
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - KUBECONFIG=/root/.kube/config
+
 volumes:
   nats-data:
+  mongodb-data:

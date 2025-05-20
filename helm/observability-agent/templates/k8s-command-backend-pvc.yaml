@@ -1,0 +1,18 @@
+{{- if .Values.k8sCommandBackend.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-k8s-command-backend
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: k8s-command-backend
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.k8sCommandBackend.persistence.size }}
+  {{- if .Values.k8sCommandBackend.persistence.storageClass }}
+  storageClassName: {{ .Values.k8sCommandBackend.persistence.storageClass }}
+  {{- end }}
+{{- end }}

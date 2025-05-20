@@ -13,7 +13,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        agent: 
+        agent:
           - deployment_agent
           - log_agent
           - metric_agent
@@ -23,6 +23,8 @@ jobs:
           - runbook_agent
           - tracing_agent
           - orchestrator
+          - ui_backend
+          - ui
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -52,8 +54,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
-          context: .
-          file: ${{ matrix.agent == 'orchestrator' && 'orchestrator/Dockerfile' || format('agents/{0}/Dockerfile', matrix.agent) }}
+          context: ${{ matrix.agent == 'ui_backend' && 'ui/backend' || matrix.agent == 'ui' && 'ui' || '.' }}
+          file: ${{ matrix.agent == 'orchestrator' && 'orchestrator/Dockerfile' || matrix.agent == 'ui_backend' && 'ui/backend/Dockerfile' || matrix.agent == 'ui' && 'ui/Dockerfile' || format('agents/{0}/Dockerfile', matrix.agent) }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

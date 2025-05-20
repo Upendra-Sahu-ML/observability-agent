@@ -138,7 +138,7 @@ orchestrator:
   replicas: 1
   # Image settings
   image:
-    repository: docker.io/upendrasahu/observability-agent-orchestrator
+    repository: observability-agent-orchestrator
     tag: latest
   # Service settings
   service:
@@ -161,7 +161,7 @@ metricAgent:
   replicas: 1
   # Image settings
   image:
-    repository: docker.io/upendrasahu/observability-agent-metric-agent
+    repository: observability-agent-metric-agent
     tag: latest
   # Resource settings
   resources:
@@ -183,7 +183,7 @@ logAgent:
   replicas: 1
   # Image settings
   image:
-    repository: docker.io/upendrasahu/observability-agent-log-agent
+    repository: observability-agent-log-agent
     tag: latest
   # Resource settings
   resources:
@@ -205,7 +205,7 @@ deploymentAgent:
   replicas: 1
   # Image settings
   image:
-    repository: docker.io/upendrasahu/observability-agent-deployment-agent
+    repository: observability-agent-deployment-agent
     tag: latest
   # Resource settings
   resources:
@@ -230,7 +230,7 @@ rootCauseAgent:
   replicas: 1
   # Image settings
   image:
-    repository: docker.io/upendrasahu/observability-agent-root-cause-agent
+    repository: observability-agent-root-cause-agent
     tag: latest
   # Resource settings
   resources:
@@ -249,7 +249,7 @@ tracingAgent:
   replicas: 1
   # Image settings
   image:
-    repository: docker.io/upendrasahu/observability-agent-tracing-agent
+    repository: observability-agent-tracing-agent
     tag: latest
   # Resource settings
   resources:
@@ -271,7 +271,7 @@ runbookAgent:
   replicas: 1
   # Image settings
   image:
-    repository: docker.io/upendrasahu/observability-agent-runbook-agent
+    repository: observability-agent-runbook-agent
     tag: latest
   # Resource settings
   resources:
@@ -290,7 +290,7 @@ notificationAgent:
   replicas: 1
   # Image settings
   image:
-    repository: docker.io/upendrasahu/observability-agent-notification-agent
+    repository: observability-agent-notification-agent
     tag: latest
   # Resource settings
   resources:
@@ -309,7 +309,7 @@ postmortemAgent:
   replicas: 1
   # Image settings
   image:
-    repository: docker.io/upendrasahu/observability-agent-postmortem-agent
+    repository: observability-agent-postmortem-agent
     tag: latest
   # Resource settings
   resources:
@@ -328,3 +328,103 @@ knowledgeBase:
     url: http://qdrant:6333
   postmortemTemplateDir: /app/templates
   runbookDir: /app/runbooks
+
+# UI Backend configuration
+uiBackend:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent-ui-backend
+    tag: latest
+  # Service settings
+  service:
+    type: ClusterIP
+    port: 5000
+  # Resource settings
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  # Additional environment variables
+  env: []
+
+# UI configuration
+ui:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent-ui
+    tag: latest
+  # Service settings
+  service:
+    type: ClusterIP
+    port: 80
+  # Resource settings
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+  # Additional environment variables
+  env: []
+
+# MongoDB configuration
+mongodb:
+  # Whether to deploy MongoDB as part of this chart
+  enabled: true
+  # MongoDB image configuration
+  image:
+    repository: mongo
+    tag: "6.0"
+    pullPolicy: IfNotPresent
+  # MongoDB resource requests and limits
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  # MongoDB persistence settings
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: ""
+
+# K8s Command Backend configuration
+k8sCommandBackend:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent-k8s-command-backend
+    tag: latest
+  # Service settings
+  service:
+    type: ClusterIP
+    port: 5002
+  # Resource settings
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  # MongoDB settings
+  mongodb:
+    uri: ""  # If empty, will use the MongoDB deployed by this chart
+  # Persistence settings
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: ""
+  # Additional environment variables
+  env: []

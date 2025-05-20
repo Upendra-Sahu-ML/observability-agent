@@ -1,0 +1,90 @@
+---
+# Service Account for the Deployment Agent
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-deployment-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: deployment-agent
+---
+# Cluster Role with permissions to execute Kubernetes commands
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-deployment-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: deployment-agent
+rules:
+  # Pods
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/status"]
+    verbs: ["get", "list", "watch"]
+
+  # Deployments, ReplicaSets, StatefulSets, DaemonSets
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/status", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+
+  # ControllerRevisions (for deployment history)
+  - apiGroups: ["apps"]
+    resources: ["controllerrevisions"]
+    verbs: ["get", "list", "watch"]
+
+  # Services, Endpoints, Nodes, Namespaces
+  - apiGroups: [""]
+    resources: ["services", "endpoints", "nodes", "namespaces"]
+    verbs: ["get", "list", "watch"]
+
+  # ConfigMaps, Secrets
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+
+  # Events
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+
+  # Ingresses
+  - apiGroups: ["networking.k8s.io", "extensions"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+
+  # PersistentVolumes, PersistentVolumeClaims
+  - apiGroups: [""]
+    resources: ["persistentvolumes", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+
+  # Jobs, CronJobs
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+
+  # HorizontalPodAutoscalers
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+
+  # Custom Resource Definitions
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+---
+# Cluster Role Binding to bind the Service Account to the Cluster Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-deployment-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: deployment-agent
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "observability-agent.fullname" . }}-deployment-agent
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "observability-agent.fullname" . }}-deployment-agent
+  apiGroup: rbac.authorization.k8s.io

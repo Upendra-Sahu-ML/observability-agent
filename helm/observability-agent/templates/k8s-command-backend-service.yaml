@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-k8s-command-backend
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: k8s-command-backend
+spec:
+  type: {{ .Values.k8sCommandBackend.service.type }}
+  ports:
+    - port: {{ .Values.k8sCommandBackend.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "observability-agent.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: k8s-command-backend

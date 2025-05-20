@@ -19,6 +19,8 @@ flowchart TD
     C -->|Responses| B
     B -->|Store| D[Knowledge Base]
     B -->|Notify| E[Notification Channels]
+    G[UI Backend] -->|Fetch Data| F1
+    H[UI] -->|API Requests| G
 
 subgraph "Specialized Agents"
     C1[Metric Agent]
@@ -45,6 +47,11 @@ subgraph "Communication Layer"
     F1[NATS with JetStream]
 end
 
+subgraph "User Interface"
+    G[UI Backend]
+    H[UI]
+end
+
 B <-->|Persistent Messaging| F1
 C <-->|Durable Subscriptions| F1
 ```
@@ -67,13 +74,17 @@ C <-->|Durable Subscriptions| F1
 - **Notification Agent**: Handles alert notifications
 - **Postmortem Agent**: Generates incident documentation
 
-### 3. Knowledge Base (Qdrant)
+### 3. User Interface
+- **UI Backend**: RESTful API service that provides data to the UI
+- **UI**: Web interface for visualizing and interacting with the system
+
+### 4. Knowledge Base (Qdrant)
 - Vector storage for incident data
 - Semantic search capabilities
 - Historical incident tracking
 - Runbook and postmortem storage
 
-### 4. Communication Layer (NATS)
+### 5. Communication Layer (NATS)
 - Message streaming with JetStream
 - Persistent, durable message delivery
 - Advanced subject-based routing
@@ -125,6 +136,11 @@ Orchestrator -> Qdrant -> Knowledge Base
 ### 5. Notification Dispatch
 ```
 Orchestrator -> NATS (notification_requests) -> Notification Agent -> Channels
+```
+
+### 6. UI Data Flow
+```
+UI -> UI Backend -> NATS (data requests) -> UI Backend -> UI
 ```
 
 ## Example Message Flow with NATS
@@ -310,11 +326,15 @@ graph TD
     A --> C[Specialized Agents]
     A --> D[Qdrant]
     A --> E[NATS]
-    
+    A --> F[UI Backend]
+    A --> G[UI]
+
     B -->|Uses| E
     B -->|Uses| D
     C -->|Uses| E
     C -->|Uses| D
+    F -->|Uses| E
+    G -->|Uses| F
 ```
 
 ### NATS Streams Configuration
@@ -328,7 +348,7 @@ streams:
     retention: limits
     max_age: 24h
   - name: AGENT_TASKS
-    subjects: ["metric_agent", "log_agent", "deployment_agent", "tracing_agent", 
+    subjects: ["metric_agent", "log_agent", "deployment_agent", "tracing_agent",
                "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent"]
     retention: limits
     max_msgs: 10000

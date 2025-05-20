@@ -24,7 +24,7 @@ spec:
       {{- end }}
       containers:
         - name: metric-agent
-          image: "{{ .Values.metricAgent.image.repository }}:{{ .Values.metricAgent.image.tag | default "latest" }}"
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.metricAgent.image.repository }}:{{ .Values.metricAgent.image.tag | default "latest" }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           env:
             - name: OPENAI_API_KEY
@@ -37,7 +37,7 @@ spec:
             - name: PROMETHEUS_URL
               value: {{ .Values.metricAgent.prometheus.url | default "http://prometheus-server.monitoring:9090" | quote }}
             - name: NATS_URL
-              value: "nats://{{ include "observability-agent.fullname" . }}-nats:4222"
+              value: nats://{{ include "observability-agent.fullname" . }}-nats:4222
             {{- range .Values.agents.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

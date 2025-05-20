@@ -4,7 +4,7 @@ A distributed observability system that uses AI agents to analyze and respond to
 
 ## Architecture
 
-The system consists of several specialized agents:
+The system consists of several specialized agents and components:
 
 - **Log Agent**: Analyzes log data to identify patterns and anomalies
 - **Metric Agent**: Processes metrics to detect performance issues
@@ -13,6 +13,9 @@ The system consists of several specialized agents:
 - **Postmortem Agent**: Generates postmortem reports
 - **Notification Agent**: Handles alerting and notifications
 - **Deployment Agent**: Manages deployments and rollbacks
+- **UI Backend**: Provides API endpoints for the UI
+- **UI**: Web interface for interacting with the system
+- **K8s Command Backend**: Converts natural language to Kubernetes commands and executes them
 
 ## Setup
 
@@ -27,9 +30,16 @@ cp .env.example .env
 # Edit .env with your configuration
 ```
 
-3. Run the agents:
+3. Run the system using Docker Compose:
 ```bash
-python main.py
+docker-compose up -d
+```
+
+4. Access the UI:
+```bash
+# UI is available at http://localhost:8080
+# UI Backend API is available at http://localhost:5000/api
+# K8s Command Backend API is available at http://localhost:5002/api
 ```
 
 ## Development
@@ -52,6 +62,11 @@ pytest tests/
 2. Implement the agent using crewai's Agent
 3. Add the agent to main.py
 4. Create tests
+
+## Documentation
+
+- [Kubernetes Command Interface](docs/K8S_COMMAND_INTERFACE.md) - Overview of the Kubernetes Command Interface
+- [Kubernetes Command Examples](docs/K8S_COMMAND_EXAMPLES.md) - Examples of natural language queries for Kubernetes
 
 ## Contributing
 
