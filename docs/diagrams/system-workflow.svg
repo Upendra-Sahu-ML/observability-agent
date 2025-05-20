@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="600px" preserveAspectRatio="none" style="width:800px;height:600px;background:#FFFFFF;" version="1.1" viewBox="0 0 800 600" width="800px" zoomAndPan="magnify">
+  <defs>
+    <filter height="300%" id="f1h0esl9xtzvj3" width="300%" x="-1" y="-1">
+      <feGaussianBlur result="blurOut" stdDeviation="2.0"/>
+      <feColorMatrix in="blurOut" result="blurOut2" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .4 0"/>
+      <feOffset dx="4.0" dy="4.0" in="blurOut2" result="blurOut3"/>
+      <feBlend in="SourceGraphic" in2="blurOut3" mode="normal"/>
+    </filter>
+  </defs>
+  <g>
+    <!-- Title -->
+    <text fill="#000000" font-family="sans-serif" font-size="18" lengthAdjust="spacing" textLength="300" x="250" y="28.708">System Workflow Sequence</text>
+    
+    <!-- Participants -->
+    <rect fill="#F9D5E5" filter="url(#f1h0esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="150" x="10" y="58.9688"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="130" x="20" y="89.9639">Monitoring System</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1h0esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="150" x="170" y="58.9688"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="130" x="180" y="89.9639">NATS</text>
+    
+    <rect fill="#E06377" filter="url(#f1h0esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="150" x="330" y="58.9688"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="130" x="340" y="89.9639">Orchestrator</text>
+    
+    <rect fill="#C83349" filter="url(#f1h0esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="150" x="490" y="58.9688"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="130" x="500" y="89.9639">Multi-Agent System</text>
+    
+    <rect fill="#5B9AA0" filter="url(#f1h0esl9xtzvj3)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="150" x="650" y="58.9688"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="130" x="660" y="89.9639">Knowledge Base</text>
+    
+    <!-- Participant lines -->
+    <line style="stroke:#000000;stroke-width:1.0;stroke-dasharray:5.0,5.0;" x1="85" x2="85" y1="105.2656" y2="537.8125"/>
+    <line style="stroke:#000000;stroke-width:1.0;stroke-dasharray:5.0,5.0;" x1="245" x2="245" y1="105.2656" y2="537.8125"/>
+    <line style="stroke:#000000;stroke-width:1.0;stroke-dasharray:5.0,5.0;" x1="405" x2="405" y1="105.2656" y2="537.8125"/>
+    <line style="stroke:#000000;stroke-width:1.0;stroke-dasharray:5.0,5.0;" x1="565" x2="565" y1="105.2656" y2="537.8125"/>
+    <line style="stroke:#000000;stroke-width:1.0;stroke-dasharray:5.0,5.0;" x1="725" x2="725" y1="105.2656" y2="537.8125"/>
+    
+    <!-- Message 1: Alert from Monitoring -->
+    <polygon fill="#000000" points="233.5,147.5313,243.5,151.5313,233.5,155.5313,237.5,151.5313" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="85" x2="239.5" y1="151.5313" y2="151.5313"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="130" x="92" y="146.4639">Publish Alert</text>
+    
+    <!-- Message 2: NATS to Orchestrator -->
+    <polygon fill="#000000" points="393.5,176.6641,403.5,180.6641,393.5,184.6641,397.5,180.6641" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="245" x2="399.5" y1="180.6641" y2="180.6641"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="130" x="252" y="175.5967">Deliver Alert</text>
+    
+    <!-- Message 3: Orchestrator to KB -->
+    <polygon fill="#000000" points="713.5,205.7969,723.5,209.7969,713.5,213.7969,717.5,209.7969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="405" x2="719.5" y1="209.7969" y2="209.7969"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="290" x="412" y="204.7295">Check for Similar Incidents</text>
+    
+    <!-- Message 4: Orchestrator to NATS for Tasks -->
+    <polygon fill="#000000" points="256.5,234.9297,246.5,238.9297,256.5,242.9297,252.5,238.9297" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="250.5" x2="405" y1="238.9297" y2="238.9297"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="130" x="262.5" y="233.8623">Publish Tasks</text>
+    
+    <!-- Message 5: NATS to Multi-Agent -->
+    <polygon fill="#000000" points="553.5,264.0625,563.5,268.0625,553.5,272.0625,557.5,268.0625" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="245" x2="559.5" y1="268.0625" y2="268.0625"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="290" x="252" y="262.9951">Deliver Tasks to Agents</text>
+    
+    <!-- Self Message: Multi-Agent Analysis -->
+    <path d="M570.5,278.0625 C570.5,288.0625 570.5,295.0625 570.5,302.5107 " fill="none" style="stroke:#000000;stroke-width:1.0;"/>
+    <polygon fill="#000000" points="565.5,300.1953,570.5,310.1953,575.5,300.1953,570.5,305.1953" style="stroke:#000000;stroke-width:1.0;"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="180" x="585.5" y="297.1279">Multi-Agent Analysis</text>
+    
+    <!-- Message 6: Multi-Agent to NATS -->
+    <polygon fill="#000000" points="256.5,339.3281,246.5,343.3281,256.5,347.3281,252.5,343.3281" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="250.5" x2="565" y1="343.3281" y2="343.3281"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="290" x="262.5" y="338.2607">Publish Analysis Results</text>
+    
+    <!-- Message 7: NATS to Orchestrator -->
+    <polygon fill="#000000" points="416.5,368.4609,406.5,372.4609,416.5,376.4609,412.5,372.4609" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="410.5" x2="245" y1="372.4609" y2="372.4609"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="150" x="422.5" y="367.3936">Deliver Results</text>
+    
+    <!-- Message 8: Orchestrator to NATS for Root Cause -->
+    <polygon fill="#000000" points="256.5,397.5938,246.5,401.5938,256.5,405.5938,252.5,401.5938" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="250.5" x2="405" y1="401.5938" y2="401.5938"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="130" x="262.5" y="396.5264">Publish Root Cause Task</text>
+    
+    <!-- Message 9: NATS to Multi-Agent -->
+    <polygon fill="#000000" points="553.5,426.7266,563.5,430.7266,553.5,434.7266,557.5,430.7266" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="245" x2="559.5" y1="430.7266" y2="430.7266"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="150" x="252" y="425.6592">Deliver Root Cause Task</text>
+    
+    <!-- Self Message: Multi-Agent Root Cause Analysis -->
+    <path d="M570.5,440.7266 C570.5,450.7266 570.5,457.7266 570.5,465.1748 " fill="none" style="stroke:#000000;stroke-width:1.0;"/>
+    <polygon fill="#000000" points="565.5,462.8594,570.5,472.8594,575.5,462.8594,570.5,467.8594" style="stroke:#000000;stroke-width:1.0;"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="240" x="585.5" y="459.792">Multi-Agent Root Cause Analysis</text>
+    
+    <!-- Message 10: Store in KB -->
+    <polygon fill="#000000" points="713.5,501.9922,723.5,505.9922,713.5,509.9922,717.5,505.9922" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="405" x2="719.5" y1="505.9922" y2="505.9922"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="130" x="412" y="500.9248">Store Incident Data</text>
+  </g>
+</svg>

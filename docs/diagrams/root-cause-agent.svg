@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="500px" preserveAspectRatio="none" style="width:700px;height:500px;background:#FFFFFF;" version="1.1" viewBox="0 0 700 500" width="700px" zoomAndPan="magnify">
+  <defs>
+    <filter height="300%" id="f1wt26ljkqioi8" width="300%" x="-1" y="-1">
+      <feGaussianBlur result="blurOut" stdDeviation="2.0"/>
+      <feColorMatrix in="blurOut" result="blurOut2" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .4 0"/>
+      <feOffset dx="4.0" dy="4.0" in="blurOut2" result="blurOut3"/>
+      <feBlend in="SourceGraphic" in2="blurOut3" mode="normal"/>
+    </filter>
+  </defs>
+  <g>
+    <!-- Title -->
+    <text fill="#000000" font-family="sans-serif" font-size="18" lengthAdjust="spacing" textLength="240" x="230" y="28.708">Root Cause Agent Architecture</text>
+    
+    <!-- Input Data -->
+    <rect fill="#F9D5E5" filter="url(#f1wt26ljkqioi8)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="180" x="260" y="50"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="160" x="270" y="80.9951">Alert & Agent Analyses</text>
+    
+    <!-- Root Cause Agent -->
+    <rect fill="#F9D5E5" filter="url(#f1wt26ljkqioi8)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="180" x="260" y="130"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="160" x="270" y="160.9951">Root Cause Agent</text>
+    
+    <!-- Manager Agent -->
+    <rect fill="#F9D5E5" filter="url(#f1wt26ljkqioi8)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:2.5;" width="180" x="260" y="210"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="160" x="270" y="240.9951">Root Cause Manager</text>
+    
+    <!-- Specialist Agents -->
+    <rect fill="#EEAC99" filter="url(#f1wt26ljkqioi8)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="180" x="100" y="300"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="160" x="110" y="330.9951">Infrastructure Analyst</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1wt26ljkqioi8)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="180" x="420" y="300"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="160" x="430" y="330.9951">Application Analyst</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1wt26ljkqioi8)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="180" x="100" y="380"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="160" x="110" y="410.9951">Database Analyst</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1wt26ljkqioi8)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="180" x="420" y="380"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="160" x="430" y="410.9951">Network Analyst</text>
+    
+    <!-- Result -->
+    <rect fill="#5B9AA0" filter="url(#f1wt26ljkqioi8)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="180" x="260" y="450"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="160" x="270" y="480.9951">Root Cause Analysis</text>
+    
+    <!-- Arrows for connections -->
+    <polygon fill="#000000" points="350,106.2969,350,110.2969,340,114.2969,350,118.2969,350,122.2969,360,118.2969,360,114.2969,350,110.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="96.2969" y2="122.2969"/>
+    
+    <polygon fill="#000000" points="350,186.2969,350,190.2969,340,194.2969,350,198.2969,350,202.2969,360,198.2969,360,194.2969,350,190.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="176.2969" y2="202.2969"/>
+    
+    <!-- Delegate arrows -->
+    <polygon fill="#000000" points="190,280,190,284,180,288,190,292,190,296,200,292,200,288,190,284" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="256.2969" y2="270"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="190" y1="270" y2="270"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="190" x2="190" y1="270" y2="296"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="54" x="230" y="265.0669">Delegate</text>
+    
+    <polygon fill="#000000" points="510,280,510,284,500,288,510,292,510,296,520,292,520,288,510,284" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="256.2969" y2="270"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="510" y1="270" y2="270"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="510" x2="510" y1="270" y2="296"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="54" x="400" y="265.0669">Delegate</text>
+    
+    <polygon fill="#000000" points="190,360,190,364,180,368,190,372,190,376,200,372,200,368,190,364" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="190" y1="270" y2="270"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="190" x2="190" y1="346.2969" y2="376"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="54" x="230" y="345.0669">Delegate</text>
+    
+    <polygon fill="#000000" points="510,360,510,364,500,368,510,372,510,376,520,372,520,368,510,364" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="510" y1="270" y2="270"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="510" x2="510" y1="346.2969" y2="376"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="54" x="400" y="345.0669">Delegate</text>
+    
+    <!-- Report arrows -->
+    <polygon fill="#000000" points="350,360,350,364,340,368,350,372,350,376,360,372,360,368,350,364" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="190" x2="190" y1="346.2969" y2="360"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="190" x2="350" y1="360" y2="360"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="256.2969" y2="376"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="41" x="240" y="355.0669">Report</text>
+    
+    <polygon fill="#000000" points="350,360,350,364,340,368,350,372,350,376,360,372,360,368,350,364" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="510" x2="510" y1="346.2969" y2="360"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="510" x2="350" y1="360" y2="360"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="41" x="410" y="355.0669">Report</text>
+    
+    <polygon fill="#000000" points="350,426.2969,350,430.2969,340,434.2969,350,438.2969,350,442.2969,360,438.2969,360,434.2969,350,430.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="190" x2="190" y1="426.2969" y2="434.2969"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="190" x2="350" y1="434.2969" y2="434.2969"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="376.2969" y2="442.2969"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="41" x="240" y="429.3638">Report</text>
+    
+    <polygon fill="#000000" points="350,426.2969,350,430.2969,340,434.2969,350,438.2969,350,442.2969,360,438.2969,360,434.2969,350,430.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="510" x2="510" y1="426.2969" y2="434.2969"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="510" x2="350" y1="434.2969" y2="434.2969"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="41" x="410" y="429.3638">Report</text>
+  </g>
+</svg>

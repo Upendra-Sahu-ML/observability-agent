@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="500px" preserveAspectRatio="none" style="width:700px;height:500px;background:#FFFFFF;" version="1.1" viewBox="0 0 700 500" width="700px" zoomAndPan="magnify">
+  <defs>
+    <filter height="300%" id="f1wt26ljkqioi2" width="300%" x="-1" y="-1">
+      <feGaussianBlur result="blurOut" stdDeviation="2.0"/>
+      <feColorMatrix in="blurOut" result="blurOut2" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .4 0"/>
+      <feOffset dx="4.0" dy="4.0" in="blurOut2" result="blurOut3"/>
+      <feBlend in="SourceGraphic" in2="blurOut3" mode="normal"/>
+    </filter>
+  </defs>
+  <g>
+    <!-- Title -->
+    <text fill="#000000" font-family="sans-serif" font-size="18" lengthAdjust="spacing" textLength="220" x="240" y="28.708">Log Agent Architecture</text>
+    
+    <!-- Input -->
+    <rect fill="#F9D5E5" filter="url(#f1wt26ljkqioi2)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="290" y="50"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="300" y="80.9951">Alert</text>
+    
+    <!-- Main Agent -->
+    <rect fill="#F9D5E5" filter="url(#f1wt26ljkqioi2)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="120" x="290" y="130"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="300" y="160.9951">Log Agent</text>
+    
+    <!-- Sequential Agents -->
+    <rect fill="#EEAC99" filter="url(#f1wt26ljkqioi2)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="200" x="250" y="210"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="180" x="260" y="240.9951">Error Log Analyzer</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1wt26ljkqioi2)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="200" x="250" y="290"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="180" x="260" y="320.9951">Performance Log Analyzer</text>
+    
+    <rect fill="#EEAC99" filter="url(#f1wt26ljkqioi2)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="200" x="250" y="370"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="180" x="260" y="400.9951">Security Log Analyzer</text>
+    
+    <rect fill="#E06377" filter="url(#f1wt26ljkqioi2)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="200" x="250" y="450"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="180" x="260" y="480.9951">Correlation Analyzer</text>
+    
+    <!-- Connections -->
+    <polygon fill="#000000" points="350,106.2969,350,110.2969,340,114.2969,350,118.2969,350,122.2969,360,118.2969,360,114.2969,350,110.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="96.2969" y2="122.2969"/>
+    
+    <polygon fill="#000000" points="350,186.2969,350,190.2969,340,194.2969,350,198.2969,350,202.2969,360,198.2969,360,194.2969,350,190.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="176.2969" y2="202.2969"/>
+    
+    <polygon fill="#000000" points="350,266.2969,350,270.2969,340,274.2969,350,278.2969,350,282.2969,360,278.2969,360,274.2969,350,270.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="256.2969" y2="282.2969"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="53" x="358" y="277.0669">Results</text>
+    
+    <polygon fill="#000000" points="350,346.2969,350,350.2969,340,354.2969,350,358.2969,350,362.2969,360,358.2969,360,354.2969,350,350.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="336.2969" y2="362.2969"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="53" x="358" y="357.0669">Results</text>
+    
+    <polygon fill="#000000" points="350,426.2969,350,430.2969,340,434.2969,350,438.2969,350,442.2969,360,438.2969,360,434.2969,350,430.2969" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="350" x2="350" y1="416.2969" y2="442.2969"/>
+    <text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="53" x="358" y="437.0669">Results</text>
+    
+    <!-- Result Connection -->
+    <rect fill="#5B9AA0" filter="url(#f1wt26ljkqioi2)" height="46.2969" rx="5" ry="5" style="stroke:#000000;stroke-width:1.5;" width="200" x="500" y="450"/>
+    <text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="180" x="510" y="480.9951">Unified Log Analysis</text>
+    
+    <polygon fill="#000000" points="490,473.1484,490,477.1484,480,481.1484,490,485.1484,490,489.1484,500,485.1484,500,481.1484,490,477.1484" style="stroke:#000000;stroke-width:1.0;"/>
+    <line style="stroke:#000000;stroke-width:1.0;" x1="450" x2="490" y1="473.1484" y2="473.1484"/>
+  </g>
+</svg>

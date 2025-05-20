@@ -8,6 +8,7 @@ from datetime import datetime
 from crewai import Agent, Task, Crew
 from crewai.llm import LLM
 from crewai.tools import tool
+from crewai import process
 from dotenv import load_dotenv
 from common.tools.log_tools import (
     LokiQueryTool,
@@ -45,7 +46,63 @@ class LogAgent:
         self.pod_log_tool = PodLogTool()
         self.file_log_tool = FileLogTool()
         
-        # Create a crewAI agent for log analysis
+        # Create specialized agents for different aspects of log analysis
+        self.error_log_analyzer = Agent(
+            role="Error Log Analyzer",
+            goal="Identify error patterns and exception traces in logs",
+            backstory="You are an expert at parsing error messages, exceptions, and stack traces to pinpoint the exact source of application failures and bugs.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.loki_tool.query_logs,
+                self.loki_tool.find_error_patterns,
+                self.loki_tool.get_service_errors,
+                self.pod_log_tool.pod_logs,
+                self.file_log_tool.grep_logs
+            ]
+        )
+        
+        self.performance_log_analyzer = Agent(
+            role="Performance Log Analyzer",
+            goal="Identify performance degradation patterns in logs",
+            backstory="You specialize in analyzing log entries related to system performance, including latency indicators, slow queries, and resource utilization patterns.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.loki_tool.query_logs,
+                self.loki_tool.get_service_latency,
+                self.pod_log_tool.get_logs_by_label,
+                self.file_log_tool.file_logs
+            ]
+        )
+        
+        self.security_log_analyzer = Agent(
+            role="Security Log Analyzer",
+            goal="Identify potential security incidents in logs",
+            backstory="You focus on detecting security-related issues in logs, including unauthorized access attempts, permission issues, and suspicious activity patterns.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.loki_tool.query_logs,
+                self.pod_log_tool.get_logs_by_label,
+                self.file_log_tool.grep_logs
+            ]
+        )
+        
+        self.correlation_analyzer = Agent(
+            role="Log Correlation Analyzer",
+            goal="Correlate patterns across different log sources",
+            backstory="You excel at connecting related events across different log sources and systems to identify cascading failures and root causes.",
+            verbose=True,
+            llm=self.llm,
+            tools=[
+                self.loki_tool.query_logs,
+                self.pod_log_tool.list_pods,
+                self.file_log_tool.list_log_files
+            ]
+        )
+        
+        # Keep the original log analyzer for backward compatibility
         self.log_analyzer = Agent(
             role="Log Analyzer",
             goal="Analyze log data to identify patterns and anomalies",
@@ -102,8 +159,98 @@ class LogAgent:
             else:
                 return "Log anomaly detected"
     
+    def _create_specialized_log_tasks(self, alert):
+        """Create specialized log analysis tasks for each analyzer"""
+        alert_id = alert.get("alert_id", "unknown")
+        alert_name = alert.get("labels", {}).get("alertname", "Unknown Alert")
+        service = alert.get("labels", {}).get("service", "")
+        namespace = alert.get("labels", {}).get("namespace", "default")
+        pod = alert.get("labels", {}).get("pod", "")
+        
+        # Determine time range - default to 15 min before alert
+        time_range = "-15m"
+        
+        # Base context information that all analyzers will use
+        base_context = f"""
+        Alert: {alert_name} (ID: {alert_id})
+        Service: {service}
+        Namespace: {namespace}
+        Pod: {pod}
+        Time range to analyze: {time_range} to now
+        """
+        
+        # Error analysis task
+        error_task = Task(
+            description=base_context + """
+            Focus on analyzing error and exception patterns in the logs:
+            
+            1. Identify all error messages, exceptions, and stack traces
+            2. Categorize errors by type and severity
+            3. Look for patterns in error frequency or timing
+            4. Identify the specific components or code paths that are failing
+            5. Determine if errors correlate with the alert timing
+            
+            Provide a detailed analysis of error patterns found, their likely causes, and suggestions for further investigation.
+            """,
+            agent=self.error_log_analyzer,
+            expected_output="A detailed analysis of error patterns in the logs"
+        )
+        
+        # Performance analysis task
+        performance_task = Task(
+            description=base_context + """
+            Focus on analyzing performance-related log entries:
+            
+            1. Identify slow operations, high latency indicators, and timeouts
+            2. Look for resource constraints (memory, CPU, connections, etc.)
+            3. Analyze timing patterns and performance degradation trends
+            4. Identify specific endpoints, queries, or operations that are slow
+            5. Determine if performance issues correlate with the alert timing
+            
+            Provide a detailed analysis of performance patterns found, their likely causes, and suggestions for further investigation.
+            """,
+            agent=self.performance_log_analyzer,
+            expected_output="A detailed analysis of performance-related patterns in the logs"
+        )
+        
+        # Security analysis task
+        security_task = Task(
+            description=base_context + """
+            Focus on analyzing security-related log entries:
+            
+            1. Look for authentication failures or access denied messages
+            2. Identify any permission issues or authorization failures
+            3. Check for unusual access patterns or suspicious activity
+            4. Look for configuration issues that might impact security
+            5. Determine if security issues correlate with the alert timing
+            
+            Provide a detailed analysis of security patterns found, their likely implications, and suggestions for further investigation.
+            """,
+            agent=self.security_log_analyzer,
+            expected_output="A detailed analysis of security-related patterns in the logs"
+        )
+        
+        # Correlation analysis task
+        correlation_task = Task(
+            description=base_context + """
+            After the other analysts have completed their work, review their findings and:
+            
+            1. Identify connections between different types of log entries
+            2. Correlate events across different log sources
+            3. Establish a likely sequence of events leading to the alert
+            4. Synthesize the findings into a coherent narrative
+            5. Determine the most likely primary issue based on all log evidence
+            
+            Provide a comprehensive correlation analysis that ties together the findings from all log sources and types.
+            """,
+            agent=self.correlation_analyzer,
+            expected_output="A correlation analysis connecting patterns across different log sources"
+        )
+        
+        return [error_task, performance_task, security_task, correlation_task], time_range
+    
     def _create_log_analysis_task(self, alert):
-        """Create a log analysis task for the crew"""
+        """Create a log analysis task for the crew (backward compatibility)"""
         alert_id = alert.get("alert_id", "unknown")
         alert_name = alert.get("labels", {}).get("alertname", "Unknown Alert")
         service = alert.get("labels", {}).get("service", "")
@@ -144,23 +291,29 @@ class LogAgent:
         return task, time_range
     
     async def analyze_logs(self, alert):
-        """Analyze logs using crewAI"""
+        """Analyze logs using multi-agent crewAI"""
         logger.info(f"Analyzing logs for alert ID: {alert.get('alert_id', 'unknown')}")
         
-        # Create log analysis task
-        task, time_range = self._create_log_analysis_task(alert)
+        # Create specialized log analysis tasks
+        tasks, time_range = self._create_specialized_log_tasks(alert)
         
-        # Create crew with log analyzer
+        # Create crew with specialized analyzers
         crew = Crew(
-            agents=[self.log_analyzer],
-            tasks=[task],
-            verbose=True
+            agents=[
+                self.error_log_analyzer,
+                self.performance_log_analyzer,
+                self.security_log_analyzer,
+                self.correlation_analyzer
+            ],
+            tasks=tasks,
+            verbose=True,
+            process=process.Sequential()
         )
         
         # Execute crew analysis
         result = crew.kickoff()
         
-        # Return both the analysis result and some metadata about what was analyzed
+        # Return both the analysis result and metadata
         logs_data = {
             "time_range": time_range,
             "service": alert.get("labels", {}).get("service", ""),
