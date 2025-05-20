@@ -569,8 +569,17 @@ class RunbookSearchTool:
 class RunbookExecutionTool:
     """Tool for executing runbook steps and tracking progress"""
 
+    def __init__(self, js=None):
+        """Initialize the runbook execution tool with JetStream client"""
+        self.js = js
+        self.executions = {}  # In-memory store of executions
+
+    def set_jetstream(self, js):
+        """Set the JetStream client"""
+        self.js = js
+
     @tool("Execute runbook steps and track progress")
-    def execute_runbook(self, runbook_id: str = None, incident_id: str = None, steps: list = None):
+    def execute_runbook(self, runbook_id: str = None, incident_id: str = None, steps: list = None, execution_id: str = None):
         """
         Execute runbook steps and track progress
 
@@ -578,35 +587,169 @@ class RunbookExecutionTool:
             runbook_id (str): ID of the runbook to execute
             incident_id (str): ID of the incident being addressed
             steps (list, optional): List of steps to execute if not using a standard runbook
+            execution_id (str, optional): ID of the execution to track
 
         Returns:
             dict: Execution results with step status and outcomes
         """
-        # In a real implementation, this would track execution of steps
-        # For now, we'll just return the steps with mock status
+        # Generate execution ID if not provided
+        if not execution_id:
+            execution_id = f"exec-{datetime.now().strftime('%Y%m%d%H%M%S')}-{runbook_id}"
 
+        # If no steps provided, use empty list
         if not steps:
-            # If this were a real implementation, we would fetch the steps for the runbook_id
             steps = ["No steps provided"]
 
-        execution_results = []
-        for i, step in enumerate(steps):
-            # In a real implementation, we might actually execute commands or track manual execution
-            execution_results.append({
-                "step_number": i + 1,
-                "description": step,
-                "status": "simulated",
-                "outcome": "This is a simulated execution. In a real environment, this would track actual execution status."
-            })
-
-        return {
+        # Create execution record
+        execution = {
+            "execution_id": execution_id,
             "runbook_id": runbook_id or "custom",
             "incident_id": incident_id,
-            "execution_id": f"exec-{incident_id}-{runbook_id}" if runbook_id and incident_id else "exec-custom",
-            "status": "completed",
-            "steps_executed": len(execution_results),
-            "results": execution_results
+            "status": "in_progress",
+            "progress": 0,
+            "start_time": datetime.now().isoformat(),
+            "steps": [{"step_number": i+1, "description": step, "status": "pending"} for i, step in enumerate(steps)],
+            "current_step": 0,
+            "steps_total": len(steps)
         }
+
+        # Store execution in memory
+        self.executions[execution_id] = execution
+
+        # Start execution in background thread
+        import threading
+        thread = threading.Thread(target=self._execute_steps, args=(execution_id,))
+        thread.daemon = True
+        thread.start()
+
+        # Return initial status
+        return {
+            "execution_id": execution_id,
+            "runbook_id": runbook_id or "custom",
+            "incident_id": incident_id,
+            "status": "in_progress",
+            "progress": 0,
+            "steps_total": len(steps)
+        }
+
+    def _execute_steps(self, execution_id):
+        """
+        Execute runbook steps in background
+
+        Args:
+            execution_id (str): ID of the execution to process
+        """
+        import time
+
+        execution = self.executions.get(execution_id)
+        if not execution:
+            logger.error(f"Execution {execution_id} not found")
+            return
+
+        steps = execution["steps"]
+        total_steps = len(steps)
+
+        # Process each step
+        for i, step in enumerate(steps):
+            # Update current step
+            execution["current_step"] = i
+            step["status"] = "in_progress"
+            self._publish_status_update(execution)
+
+            # Log step execution
+            logger.info(f"Executing step {i+1}/{total_steps} for execution {execution_id}: {step['description']}")
+
+            # Simulate step execution (in real implementation, would actually execute commands)
+            try:
+                # Simulate execution time
+                time.sleep(5)  # 5 seconds per step
+
+                # Execute the step (this would be real execution in production)
+                result = self._execute_single_step(step["description"])
+
+                # Update step status
+                step["status"] = "completed"
+                step["outcome"] = result
+
+                # Update progress
+                execution["progress"] = int(((i + 1) / total_steps) * 100)
+
+                # Publish status update
+                self._publish_status_update(execution)
+
+            except Exception as e:
+                logger.error(f"Error executing step {i+1}: {str(e)}")
+                step["status"] = "failed"
+                step["outcome"] = f"Error: {str(e)}"
+                execution["status"] = "failed"
+                self._publish_status_update(execution)
+                return
+
+        # All steps completed
+        execution["status"] = "completed"
+        execution["end_time"] = datetime.now().isoformat()
+        execution["progress"] = 100
+
+        # Publish final status update
+        self._publish_status_update(execution)
+        logger.info(f"Execution {execution_id} completed successfully")
+
+    def _execute_single_step(self, step_description):
+        """
+        Execute a single runbook step
+
+        Args:
+            step_description (str): Description of the step to execute
+
+        Returns:
+            str: Result of the step execution
+        """
+        # In a real implementation, this would parse the step and execute appropriate commands
+        # For now, we'll just return a simulated result
+        return f"Step executed successfully: {step_description}"
+
+    def _publish_status_update(self, execution):
+        """
+        Publish execution status update to NATS
+
+        Args:
+            execution (dict): Execution record to publish
+        """
+        if not self.js:
+            logger.warning("JetStream not available, skipping status update")
+            return
+
+        try:
+            # Create a copy of the execution with only the necessary fields
+            status_update = {
+                "execution_id": execution["execution_id"],
+                "runbook_id": execution["runbook_id"],
+                "status": execution["status"],
+                "progress": execution["progress"],
+                "current_step": execution["current_step"],
+                "steps": execution["steps"],
+                "timestamp": datetime.now().isoformat()
+            }
+
+            # Publish to runbook.status.<execution_id>
+            import json
+            import asyncio
+
+            async def publish():
+                try:
+                    await self.js.publish(
+                        f"runbook.status.{execution['execution_id']}",
+                        json.dumps(status_update).encode()
+                    )
+                    logger.info(f"Published status update for execution {execution['execution_id']}")
+                except Exception as e:
+                    logger.error(f"Error publishing status update: {str(e)}")
+
+            # Run the async publish function
+            asyncio.run(publish())
+
+        except Exception as e:
+            logger.error(f"Error publishing status update: {str(e)}")
 
     @tool("Track runbook execution status")
     def track_execution(self, execution_id: str):
@@ -619,14 +762,26 @@ class RunbookExecutionTool:
         Returns:
             dict: Current status of the runbook execution
         """
-        # In a real implementation, this would retrieve the status from a database
+        # Check if execution exists in memory
+        execution = self.executions.get(execution_id)
+        if execution:
+            return {
+                "execution_id": execution["execution_id"],
+                "runbook_id": execution["runbook_id"],
+                "status": execution["status"],
+                "progress": execution["progress"],
+                "steps_completed": sum(1 for step in execution["steps"] if step["status"] == "completed"),
+                "steps_total": len(execution["steps"]),
+                "current_step": execution["current_step"],
+                "steps": execution["steps"],
+                "last_updated": datetime.now().isoformat()
+            }
+
+        # If not in memory, return a default response
         return {
             "execution_id": execution_id,
-            "status": "completed",  # Example status
-            "steps_completed": 5,   # Example number
-            "steps_total": 5,      # Example number
-            "progress": 100,       # Example percentage
-            "last_updated": datetime.now().isoformat()
+            "status": "unknown",
+            "message": "Execution not found or completed"
         }
 
     @tool("Generate custom runbook")

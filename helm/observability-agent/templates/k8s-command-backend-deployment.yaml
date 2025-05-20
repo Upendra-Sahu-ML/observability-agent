@@ -6,6 +6,8 @@ metadata:
     {{- include "observability-agent.labels" . | nindent 4 }}
     app.kubernetes.io/component: k8s-command-backend
 spec:
+  strategy:
+    type: Recreate
   replicas: {{ .Values.k8sCommandBackend.replicas }}
   selector:
     matchLabels:

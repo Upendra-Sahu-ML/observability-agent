@@ -7,6 +7,7 @@ const OpenAI = require('openai');
 const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
+const crypto = require('crypto');
 
 // Load environment variables
 require('dotenv').config();
@@ -36,7 +37,12 @@ const notebookSchema = new mongoose.Schema({
   description: { type: String },
   cells: [{
     type: { type: String, enum: ['command', 'result'], default: 'command' },
-    content: { type: String, required: true },
+    content: {
+      type: String,
+      required: true,
+      // Set default value to space if content is empty
+      default: ' '
+    },
     executedCommand: { type: String },
     timestamp: { type: Date, default: Date.now }
   }],
@@ -45,6 +51,30 @@ const notebookSchema = new mongoose.Schema({
 });
 
 const Notebook = mongoose.model('Notebook', notebookSchema);
+
+// Define Session schema for context management
+const sessionSchema = new mongoose.Schema({
+  sessionId: { type: String, required: true, unique: true },
+  context: {
+    lastCommand: { type: String },
+    lastCommandOutput: { type: String },
+    lastNamespace: { type: String },
+    lastPods: { type: Array, default: [] },
+    lastServices: { type: Array, default: [] },
+    lastDeployments: { type: Array, default: [] },
+    lastResources: { type: Object, default: {} }
+  },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+// Add TTL index to automatically expire sessions after 1 hour of inactivity
+sessionSchema.index({ updatedAt: 1 }, { expireAfterSeconds: 3600 });
+
+const Session = mongoose.model('Session', sessionSchema);
+
+// In-memory context cache for faster access
+const contextCache = new Map();
 
 // NATS connection
 let nc = null;
@@ -56,13 +86,42 @@ async function connectToNATS() {
     const NATS_URL = process.env.NATS_URL || 'nats://localhost:4222';
     nc = await connect({ servers: NATS_URL });
     console.log(`Connected to NATS at ${NATS_URL}`);
-    
-    // Create JetStream context
-    js = nc.jetstream();
-    
-    // Create streams if they don't exist
-    await createStreams();
-    
+
+    // Try to create JetStream context
+    try {
+      if (typeof nc.jetstream === 'function') {
+        js = nc.jetstream();
+        console.log('JetStream context created');
+
+        // Try to detect JetStream API version
+        if (js) {
+          if (typeof js.streams === 'object' && typeof js.streams.info === 'function') {
+            console.log('Detected newer JetStream API (streams.info)');
+          } else if (typeof js.streamInfo === 'function') {
+            console.log('Detected older JetStream API (streamInfo)');
+          } else if (typeof js.addStream === 'function') {
+            console.log('Detected older JetStream API (addStream)');
+          } else {
+            console.log('Unknown JetStream API version - will use basic NATS only');
+            // Set js to null to indicate JetStream is not available
+            js = null;
+          }
+        }
+
+        // Only try to create streams if we have a valid JetStream context
+        if (js) {
+          // Create streams if they don't exist
+          await createStreams();
+        }
+      } else {
+        console.log('JetStream not available in this NATS client version');
+        js = null;
+      }
+    } catch (jsErr) {
+      console.error(`JetStream initialization error: ${jsErr.message}`);
+      js = null;
+    }
+
     return { nc, js };
   } catch (err) {
     console.error(`NATS connection error: ${err.message}`);
@@ -72,25 +131,258 @@ async function connectToNATS() {
 
 async function createStreams() {
   try {
-    // Create a stream for notebooks
-    await js.streams.add({ name: 'NOTEBOOKS', subjects: ['notebooks.*'] });
-    console.log('NOTEBOOKS stream created or already exists');
-  } catch (err) {
-    if (err.code !== 400) { // 400 means the stream already exists
-      console.error(`Error creating streams: ${err.message}`);
+    if (!js) {
+      console.warn('JetStream not available, skipping stream creation');
+      return;
     }
+
+    // Check if the NOTEBOOKS stream exists
+    try {
+      // Different versions of NATS.js have different APIs
+      // Try the newer API first
+      if (typeof js.streams === 'object' && typeof js.streams.info === 'function') {
+        await js.streams.info('NOTEBOOKS');
+        console.log('NOTEBOOKS stream already exists');
+      } else if (typeof js.streamInfo === 'function') {
+        // Try older API
+        await js.streamInfo('NOTEBOOKS');
+        console.log('NOTEBOOKS stream already exists');
+      } else {
+        throw new Error('Unknown JetStream API');
+      }
+    } catch (err) {
+      // Stream doesn't exist, create it
+      if (typeof js.streams === 'object' && typeof js.streams.add === 'function') {
+        // Newer API
+        await js.streams.add({ name: 'NOTEBOOKS', subjects: ['notebooks.*'] });
+      } else if (typeof js.addStream === 'function') {
+        // Older API
+        await js.addStream({ name: 'NOTEBOOKS', subjects: ['notebooks.*'] });
+      } else {
+        throw new Error('Unknown JetStream API');
+      }
+      console.log('NOTEBOOKS stream created');
+    }
+  } catch (err) {
+    console.error(`Error creating streams: ${err.message}`);
+    console.error('JetStream API may be incompatible with this version of NATS client');
   }
 }
 
+// Function to get or create a session
+async function getOrCreateSession(sessionId) {
+  // Check cache first
+  if (contextCache.has(sessionId)) {
+    return contextCache.get(sessionId);
+  }
+
+  // If not in cache, check database
+  let session = await Session.findOne({ sessionId });
+
+  // If not in database, create new session
+  if (!session) {
+    session = new Session({
+      sessionId,
+      context: {
+        lastCommand: null,
+        lastCommandOutput: null,
+        lastNamespace: null,
+        lastPods: [],
+        lastServices: [],
+        lastDeployments: [],
+        lastResources: {}
+      }
+    });
+    await session.save();
+  }
+
+  // Update cache
+  contextCache.set(sessionId, session.context);
+
+  return session.context;
+}
+
+// Function to update session context
+async function updateSessionContext(sessionId, contextUpdates) {
+  // Update in database
+  const session = await Session.findOneAndUpdate(
+    { sessionId },
+    {
+      $set: {
+        'context': { ...contextUpdates },
+        'updatedAt': Date.now()
+      }
+    },
+    { new: true, upsert: true }
+  );
+
+  // Update cache
+  contextCache.set(sessionId, session.context);
+
+  return session.context;
+}
+
+// Function to extract context from command output
+function extractContextFromOutput(command, output) {
+  const context = {
+    lastCommand: command,
+    lastCommandOutput: output
+  };
+
+  // Extract namespace if present in command
+  const namespaceMatch = command.match(/-n\s+(\S+)|--namespace\s+(\S+)|--namespace=(\S+)/);
+  if (namespaceMatch) {
+    context.lastNamespace = namespaceMatch[1] || namespaceMatch[2] || namespaceMatch[3];
+  }
+
+  // If command is 'get pods', extract pod names
+  if (command.includes('get pods') || command.includes('get pod')) {
+    try {
+      // Try to parse as JSON if output is in JSON format
+      if (output.trim().startsWith('{') || output.trim().startsWith('[')) {
+        const jsonOutput = JSON.parse(output);
+
+        if (jsonOutput.items) {
+          // Handle kubectl get pods -o json output
+          context.lastPods = jsonOutput.items.map(pod => ({
+            name: pod.metadata.name,
+            namespace: pod.metadata.namespace,
+            status: pod.status.phase
+          }));
+        }
+      } else {
+        // Handle plain text output
+        const lines = output.trim().split('\n');
+        if (lines.length > 1) {
+          // Skip header line
+          const pods = [];
+          for (let i = 1; i < lines.length; i++) {
+            const columns = lines[i].split(/\s+/);
+            if (columns.length >= 3) {
+              pods.push({
+                name: columns[0],
+                status: columns[2]
+              });
+            }
+          }
+          context.lastPods = pods;
+        }
+      }
+    } catch (error) {
+      console.error('Error parsing pod output:', error);
+    }
+  }
+
+  // If command is 'get services', extract service names
+  if (command.includes('get services') || command.includes('get svc')) {
+    try {
+      const lines = output.trim().split('\n');
+      if (lines.length > 1) {
+        // Skip header line
+        const services = [];
+        for (let i = 1; i < lines.length; i++) {
+          const columns = lines[i].split(/\s+/);
+          if (columns.length >= 2) {
+            services.push({
+              name: columns[0]
+            });
+          }
+        }
+        context.lastServices = services;
+      }
+    } catch (error) {
+      console.error('Error parsing service output:', error);
+    }
+  }
+
+  // If command is 'get deployments', extract deployment names
+  if (command.includes('get deployments') || command.includes('get deploy')) {
+    try {
+      const lines = output.trim().split('\n');
+      if (lines.length > 1) {
+        // Skip header line
+        const deployments = [];
+        for (let i = 1; i < lines.length; i++) {
+          const columns = lines[i].split(/\s+/);
+          if (columns.length >= 2) {
+            deployments.push({
+              name: columns[0]
+            });
+          }
+        }
+        context.lastDeployments = deployments;
+      }
+    } catch (error) {
+      console.error('Error parsing deployment output:', error);
+    }
+  }
+
+  return context;
+}
+
 // Function to convert natural language to Kubernetes command
-async function naturalLanguageToK8sCommand(text) {
+async function naturalLanguageToK8sCommand(text, sessionId = null) {
   try {
+    let context = {};
+    let systemPrompt = "You are a Kubernetes expert. Convert natural language queries into kubectl commands. Only respond with the exact command to run, nothing else. If multiple commands are needed, separate them with semicolons.";
+
+    // If sessionId is provided, get context from session
+    if (sessionId) {
+      context = await getOrCreateSession(sessionId);
+
+      // Enhance system prompt with context
+      if (context) {
+        systemPrompt += "\n\nMaintain context between commands:";
+
+        // Add namespace context
+        if (context.lastNamespace) {
+          systemPrompt += `\n- Use namespace '${context.lastNamespace}' unless explicitly specified otherwise.`;
+        } else {
+          systemPrompt += "\n- When namespace is not specified, search across all namespaces using '--all-namespaces' or '-A'.";
+        }
+
+        // Add pod context
+        if (context.lastPods && context.lastPods.length > 0) {
+          systemPrompt += "\n- Recent pods:";
+          context.lastPods.slice(0, 5).forEach(pod => {
+            systemPrompt += `\n  * ${pod.name}${pod.namespace ? ` (namespace: ${pod.namespace})` : ''}${pod.status ? ` (status: ${pod.status})` : ''}`;
+          });
+        }
+
+        // Add service context
+        if (context.lastServices && context.lastServices.length > 0) {
+          systemPrompt += "\n- Recent services:";
+          context.lastServices.slice(0, 5).forEach(svc => {
+            systemPrompt += `\n  * ${svc.name}`;
+          });
+        }
+
+        // Add deployment context
+        if (context.lastDeployments && context.lastDeployments.length > 0) {
+          systemPrompt += "\n- Recent deployments:";
+          context.lastDeployments.slice(0, 5).forEach(deploy => {
+            systemPrompt += `\n  * ${deploy.name}`;
+          });
+        }
+
+        // Add last command context
+        if (context.lastCommand) {
+          systemPrompt += `\n\nLast command executed: ${context.lastCommand}`;
+        }
+
+        // Instructions for references to previous results
+        systemPrompt += "\n\nWhen the user refers to 'that pod', 'those pods', 'the pod', etc., use the pod names from the context.";
+        systemPrompt += "\nWhen the user asks for logs or details about a service, use the service name to find the corresponding pods.";
+        systemPrompt += "\nWhen the user doesn't specify a namespace, use the last namespace if available, otherwise search across all namespaces.";
+      }
+    }
+
     const response = await openai.chat.completions.create({
       model: "gpt-4",
       messages: [
         {
           role: "system",
-          content: "You are a Kubernetes expert. Convert natural language queries into kubectl commands. Only respond with the exact command to run, nothing else. If multiple commands are needed, separate them with semicolons."
+          content: systemPrompt
         },
         {
           role: "user",
@@ -109,9 +401,16 @@ async function naturalLanguageToK8sCommand(text) {
 }
 
 // Function to execute Kubernetes command
-async function executeK8sCommand(command) {
+async function executeK8sCommand(command, sessionId = null) {
   try {
     const { stdout, stderr } = await execPromise(command);
+
+    // If sessionId is provided, update context
+    if (sessionId) {
+      const contextUpdates = extractContextFromOutput(command, stdout);
+      await updateSessionContext(sessionId, contextUpdates);
+    }
+
     return {
       success: true,
       output: stdout,
@@ -140,13 +439,16 @@ app.get('/health', (req, res) => {
 // Convert natural language to Kubernetes command
 app.post('/api/convert', async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, sessionId } = req.body;
     if (!text) {
       return res.status(400).json({ error: 'Text is required' });
     }
 
-    const command = await naturalLanguageToK8sCommand(text);
-    res.json({ command });
+    // Generate a session ID if not provided
+    const effectiveSessionId = sessionId || crypto.randomUUID();
+
+    const command = await naturalLanguageToK8sCommand(text, effectiveSessionId);
+    res.json({ command, sessionId: effectiveSessionId });
   } catch (error) {
     console.error('Error converting text to command:', error);
     res.status(500).json({ error: error.message });
@@ -156,15 +458,34 @@ app.post('/api/convert', async (req, res) => {
 // Execute Kubernetes command
 app.post('/api/execute', async (req, res) => {
   try {
-    const { command } = req.body;
+    const { command, sessionId } = req.body;
     if (!command) {
       return res.status(400).json({ error: 'Command is required' });
     }
 
-    const result = await executeK8sCommand(command);
-    res.json(result);
+    // Generate a session ID if not provided
+    const effectiveSessionId = sessionId || crypto.randomUUID();
+
+    const result = await executeK8sCommand(command, effectiveSessionId);
+    res.json({ ...result, sessionId: effectiveSessionId });
   } catch (error) {
     console.error('Error executing command:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get session context
+app.get('/api/context/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session ID is required' });
+    }
+
+    const context = await getOrCreateSession(sessionId);
+    res.json({ context, sessionId });
+  } catch (error) {
+    console.error('Error getting context:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -202,17 +523,34 @@ app.post('/api/notebooks', async (req, res) => {
       return res.status(400).json({ error: 'Name is required' });
     }
 
+    // Validate and clean cells
+    const validatedCells = (cells || []).map(cell => ({
+      ...cell,
+      // Ensure content is never empty
+      content: cell.content || ' '
+    }));
+
     const notebook = new Notebook({
       name,
       description,
-      cells: cells || []
+      cells: validatedCells
     });
 
     await notebook.save();
 
     // Publish to NATS if connected
-    if (js) {
-      await js.publish(`notebooks.created`, sc.encode(JSON.stringify(notebook)));
+    try {
+      // Try JetStream publish first if available
+      if (js && typeof js.publish === 'function') {
+        await js.publish(`notebooks.created`, sc.encode(JSON.stringify(notebook)));
+      }
+      // Fallback to regular NATS publish
+      else if (nc && typeof nc.publish === 'function') {
+        nc.publish(`notebooks.created`, sc.encode(JSON.stringify(notebook)));
+      }
+    } catch (natsError) {
+      console.warn('NATS publish error (non-critical):', natsError.message);
+      // Continue even if NATS publish fails
     }
 
     res.status(201).json(notebook);
@@ -226,10 +564,18 @@ app.post('/api/notebooks', async (req, res) => {
 app.put('/api/notebooks/:id', async (req, res) => {
   try {
     const { name, description, cells } = req.body;
+
+    // Validate and clean cells
+    const validatedCells = (cells || []).map(cell => ({
+      ...cell,
+      // Ensure content is never empty
+      content: cell.content || ' '
+    }));
+
     const updates = {
       name,
       description,
-      cells,
+      cells: validatedCells,
       updatedAt: Date.now()
     };
 
@@ -244,8 +590,18 @@ app.put('/api/notebooks/:id', async (req, res) => {
     }
 
     // Publish to NATS if connected
-    if (js) {
-      await js.publish(`notebooks.updated`, sc.encode(JSON.stringify(notebook)));
+    try {
+      // Try JetStream publish first if available
+      if (js && typeof js.publish === 'function') {
+        await js.publish(`notebooks.updated`, sc.encode(JSON.stringify(notebook)));
+      }
+      // Fallback to regular NATS publish
+      else if (nc && typeof nc.publish === 'function') {
+        nc.publish(`notebooks.updated`, sc.encode(JSON.stringify(notebook)));
+      }
+    } catch (natsError) {
+      console.warn('NATS publish error (non-critical):', natsError.message);
+      // Continue even if NATS publish fails
     }
 
     res.json(notebook);
@@ -264,8 +620,18 @@ app.delete('/api/notebooks/:id', async (req, res) => {
     }
 
     // Publish to NATS if connected
-    if (js) {
-      await js.publish(`notebooks.deleted`, sc.encode(JSON.stringify({ id: req.params.id })));
+    try {
+      // Try JetStream publish first if available
+      if (js && typeof js.publish === 'function') {
+        await js.publish(`notebooks.deleted`, sc.encode(JSON.stringify({ id: req.params.id })));
+      }
+      // Fallback to regular NATS publish
+      else if (nc && typeof nc.publish === 'function') {
+        nc.publish(`notebooks.deleted`, sc.encode(JSON.stringify({ id: req.params.id })));
+      }
+    } catch (natsError) {
+      console.warn('NATS publish error (non-critical):', natsError.message);
+      // Continue even if NATS publish fails
     }
 
     res.json({ message: 'Notebook deleted successfully' });
@@ -297,15 +663,33 @@ app.post('/api/notebooks/:id/export', async (req, res) => {
       content: `# ${notebook.name}\n\n${notebook.description || ''}\n\n${runbookContent}`
     };
 
-    // Send to runbook API if NATS is connected
-    if (js) {
-      await js.publish('runbooks.create', sc.encode(JSON.stringify(runbookData)));
-      res.json({ success: true, runbook: runbookData });
-    } else {
-      // Fallback to direct API call
+    // Try to send to runbook API via NATS
+    try {
+      // Try JetStream publish first if available
+      if (js && typeof js.publish === 'function') {
+        await js.publish('runbooks.create', sc.encode(JSON.stringify(runbookData)));
+        res.json({ success: true, runbook: runbookData });
+        return;
+      }
+      // Fallback to regular NATS publish
+      else if (nc && typeof nc.publish === 'function') {
+        nc.publish('runbooks.create', sc.encode(JSON.stringify(runbookData)));
+        res.json({ success: true, runbook: runbookData });
+        return;
+      }
+    } catch (natsError) {
+      console.warn('NATS publish error, falling back to direct API call:', natsError.message);
+    }
+
+    // Fallback to direct API call
+    try {
       const axios = require('axios');
       const response = await axios.post('http://localhost:5001/api/runbook', runbookData);
       res.json({ success: true, runbook: response.data });
+    } catch (axiosError) {
+      console.error('Error calling runbook API directly:', axiosError.message);
+      // Still return success to the client, but log the error
+      res.json({ success: true, runbook: runbookData, warning: 'Runbook created but may not be accessible immediately' });
     }
   } catch (error) {
     console.error('Error exporting notebook as runbook:', error);

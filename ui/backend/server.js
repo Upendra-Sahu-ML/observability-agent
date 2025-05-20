@@ -29,6 +29,9 @@ const cache = {
   'knowledge/postmortems': []
 };
 
+// In-memory storage for runbook executions
+const runbookExecutions = {};
+
 // Cache TTL in milliseconds (5 minutes)
 const CACHE_TTL = 5 * 60 * 1000;
 const cacheTimestamps = {};
@@ -426,16 +429,76 @@ async function getRunbookData(js, runbookId) {
     // If JetStream is available, try to get runbooks from there
     if (js) {
       try {
-        // Check if RUNBOOKS stream exists
-        const streamInfo = await js.streams.info('RUNBOOKS').catch(() => null);
+        let streamExists = false;
+        let consumer = null;
+        let messages = [];
 
-        if (streamInfo) {
-          // Get runbooks from JetStream
-          const consumer = await js.consumers.get('RUNBOOKS', 'runbook-viewer');
-          const messages = await consumer.fetch({ max_messages: 100 });
+        // Check if RUNBOOKS stream exists using our wrapper
+        try {
+          await js.streamInfo('RUNBOOKS');
+          streamExists = true;
 
+          // Get consumer using our wrapper
+          try {
+            consumer = await js.getConsumer('RUNBOOKS', 'runbook-viewer');
+
+            // Handle different consumer fetch APIs
+            if (typeof consumer.fetch === 'function') {
+              if (consumer.fetch.length > 0) {
+                // Newer API expects an options object
+                messages = await consumer.fetch({ max_messages: 100 });
+              } else {
+                // Older API expects a number
+                messages = await consumer.fetch(100);
+              }
+            }
+          } catch (consErr) {
+            console.log('Consumer not found:', consErr.message);
+
+            // Try to create the consumer
+            try {
+              const consumerConfig = {
+                durable_name: 'runbook-viewer',
+                ack_policy: 'explicit',
+                deliver_policy: 'all'
+              };
+
+              consumer = await js.addConsumer('RUNBOOKS', consumerConfig);
+              console.log('Created runbook-viewer consumer');
+
+              // Try to fetch messages again
+              if (typeof consumer.fetch === 'function') {
+                if (consumer.fetch.length > 0) {
+                  messages = await consumer.fetch({ max_messages: 100 });
+                } else {
+                  messages = await consumer.fetch(100);
+                }
+              }
+            } catch (createErr) {
+              console.error('Error creating consumer:', createErr.message);
+            }
+          }
+        } catch (err) {
+          console.log('Stream not found:', err.message);
+
+          // Try to create the stream
+          try {
+            const streamConfig = {
+              name: 'RUNBOOKS',
+              subjects: ['runbooks.*']
+            };
+
+            await js.addStream(streamConfig);
+            console.log('Created RUNBOOKS stream');
+            streamExists = true;
+          } catch (createErr) {
+            console.error('Error creating stream:', createErr.message);
+          }
+        }
+
+        if (streamExists && messages && messages.length > 0) {
           const runbooks = messages.map(msg => {
-            const data = JSON.parse(msg.data);
+            const data = JSON.parse(typeof msg.data === 'string' ? msg.data : msg.data.toString());
             msg.ack();
             return data;
           });
@@ -486,6 +549,227 @@ async function getRunbookData(js, runbookId) {
     console.error('Error getting runbook data:', error);
     return [];
   }
+}
+
+/**
+ * Execute a runbook
+ * @param {object} js - JetStream instance
+ * @param {string} runbookId - ID of the runbook to execute
+ * @returns {Promise<object>} - Execution details
+ */
+async function executeRunbook(js, runbookId) {
+  try {
+    // Generate a unique execution ID
+    const executionId = `exec-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+    // Get the runbook
+    const runbooks = await getRunbookData(js, runbookId);
+    if (!runbooks || runbooks.length === 0) {
+      throw new Error(`Runbook with ID ${runbookId} not found`);
+    }
+
+    const runbook = runbooks[0];
+
+    // Create execution record
+    runbookExecutions[executionId] = {
+      executionId,
+      runbookId,
+      status: 'starting',
+      progress: 0,
+      startTime: new Date().toISOString(),
+      steps: runbook.steps.map((step, index) => ({
+        step_number: index + 1,
+        description: step,
+        status: 'pending',
+        outcome: null
+      })),
+      currentStep: 0
+    };
+
+    // Try to send execution request to runbook agent via JetStream
+    let usedRealExecution = false;
+
+    if (js) {
+      try {
+        // Prepare execution request
+        const executionRequest = {
+          executionId,
+          runbookId,
+          runbook,
+          timestamp: new Date().toISOString()
+        };
+
+        // Use our wrapper to publish
+        try {
+          await js.publish('runbook.execute', sc.encode(JSON.stringify(executionRequest)));
+          usedRealExecution = true;
+          console.log(`Published runbook execution request to runbook.execute: ${executionId}`);
+
+          // Set up a subscription to receive execution updates
+          setupExecutionSubscription(executionId);
+        } catch (pubErr) {
+          console.warn(`Error publishing with JetStream: ${pubErr.message}. Trying regular NATS publish.`);
+
+          // Fallback to regular NATS publish
+          if (nc && typeof nc.publish === 'function') {
+            nc.publish('runbook.execute', sc.encode(JSON.stringify(executionRequest)));
+            usedRealExecution = true;
+            console.log(`Published runbook execution request using regular NATS: ${executionId}`);
+
+            // Set up a subscription to receive execution updates
+            setupExecutionSubscription(executionId);
+          } else {
+            throw new Error('Neither JetStream nor regular NATS publish is available');
+          }
+        }
+      } catch (err) {
+        console.warn(`Error publishing execution request: ${err.message}. Falling back to simulation.`);
+        // Fall back to simulation
+        usedRealExecution = false;
+      }
+    }
+
+    // If real execution wasn't used, simulate execution in the background
+    if (!usedRealExecution) {
+      console.log(`Using simulated execution for runbook: ${runbookId}`);
+      simulateRunbookExecution(executionId, runbook);
+    }
+
+    return {
+      executionId,
+      runbookId,
+      status: 'starting',
+      message: 'Runbook execution started',
+      mode: usedRealExecution ? 'real' : 'simulated'
+    };
+  } catch (error) {
+    console.error('Error executing runbook:', error);
+    throw error;
+  }
+}
+
+/**
+ * Set up a subscription to receive execution updates
+ * @param {string} executionId - ID of the execution to track
+ */
+function setupExecutionSubscription(executionId) {
+  if (!nc) return;
+
+  try {
+    // Subscribe to execution updates
+    const sub = nc.subscribe(`runbook.status.${executionId}`);
+    console.log(`Subscribed to runbook.status.${executionId}`);
+
+    // Process incoming messages
+    (async () => {
+      for await (const msg of sub) {
+        try {
+          const update = JSON.parse(sc.decode(msg.data));
+          console.log(`Received execution update for ${executionId}:`, update);
+
+          // Update the execution record
+          if (runbookExecutions[executionId]) {
+            runbookExecutions[executionId] = {
+              ...runbookExecutions[executionId],
+              ...update,
+              lastUpdated: new Date().toISOString()
+            };
+          }
+
+          // If execution is complete or failed, unsubscribe
+          if (update.status === 'completed' || update.status === 'failed') {
+            await sub.unsubscribe();
+            console.log(`Unsubscribed from runbook.status.${executionId}`);
+          }
+        } catch (err) {
+          console.error(`Error processing execution update: ${err.message}`);
+        }
+      }
+    })().catch(err => {
+      console.error(`Subscription error: ${err.message}`);
+    });
+  } catch (err) {
+    console.error(`Error setting up execution subscription: ${err.message}`);
+  }
+}
+
+/**
+ * Simulate runbook execution
+ * @param {string} executionId - ID of the execution
+ * @param {object} runbook - Runbook to execute
+ */
+function simulateRunbookExecution(executionId, runbook) {
+  const execution = runbookExecutions[executionId];
+  if (!execution) return;
+
+  // Update status to in_progress
+  execution.status = 'in_progress';
+  execution.progress = 5;
+
+  // Simulate execution of each step
+  const totalSteps = runbook.steps.length;
+  let currentStep = 0;
+
+  const stepInterval = setInterval(() => {
+    if (!runbookExecutions[executionId]) {
+      clearInterval(stepInterval);
+      return;
+    }
+
+    const execution = runbookExecutions[executionId];
+
+    // Execute current step
+    execution.steps[currentStep].status = 'in_progress';
+    execution.currentStep = currentStep;
+
+    // After a delay, complete the step
+    setTimeout(() => {
+      if (!runbookExecutions[executionId]) {
+        clearInterval(stepInterval);
+        return;
+      }
+
+      execution.steps[currentStep].status = 'completed';
+      execution.steps[currentStep].outcome = 'Step completed successfully';
+
+      // Update progress
+      execution.progress = Math.round(((currentStep + 1) / totalSteps) * 100);
+
+      // Move to next step or complete
+      currentStep++;
+
+      if (currentStep >= totalSteps) {
+        // All steps completed
+        execution.status = 'completed';
+        execution.endTime = new Date().toISOString();
+        clearInterval(stepInterval);
+      }
+    }, 3000); // Each step takes 3 seconds
+
+  }, 5000); // 5 seconds between steps
+}
+
+/**
+ * Get runbook execution status
+ * @param {string} executionId - ID of the execution
+ * @returns {object} - Execution status
+ */
+function getRunbookExecutionStatus(executionId) {
+  const execution = runbookExecutions[executionId];
+  if (!execution) {
+    throw new Error(`Execution with ID ${executionId} not found`);
+  }
+
+  return {
+    executionId,
+    runbookId: execution.runbookId,
+    status: execution.status,
+    progress: execution.progress,
+    startTime: execution.startTime,
+    endTime: execution.endTime,
+    steps: execution.steps,
+    currentStep: execution.currentStep
+  };
 }
 
 /**
@@ -686,8 +970,93 @@ async function start() {
       console.log('NATS connection state:', nc.info);
 
       // Initialize JetStream
-      js = nc.jetstream();
-      console.log('JetStream initialized');
+      try {
+        if (typeof nc.jetstream === 'function') {
+          js = nc.jetstream();
+          console.log('JetStream initialized');
+
+          // Try to detect JetStream API version
+          if (js) {
+            // Create a wrapper around the JetStream object to handle different API versions
+            const jsWrapper = {
+              _js: js,
+
+              // Method to get stream info
+              async streamInfo(streamName) {
+                if (typeof js.streams === 'object' && typeof js.streams.info === 'function') {
+                  console.log('Using newer JetStream API (streams.info)');
+                  return js.streams.info(streamName);
+                } else if (typeof js.streamInfo === 'function') {
+                  console.log('Using older JetStream API (streamInfo)');
+                  return js.streamInfo(streamName);
+                } else {
+                  throw new Error('JetStream API does not support stream info');
+                }
+              },
+
+              // Method to add a stream
+              async addStream(config) {
+                if (typeof js.streams === 'object' && typeof js.streams.add === 'function') {
+                  console.log('Using newer JetStream API (streams.add)');
+                  return js.streams.add(config);
+                } else if (typeof js.addStream === 'function') {
+                  console.log('Using older JetStream API (addStream)');
+                  return js.addStream(config);
+                } else {
+                  throw new Error('JetStream API does not support adding streams');
+                }
+              },
+
+              // Method to get a consumer
+              async getConsumer(streamName, consumerName) {
+                if (typeof js.consumers === 'object' && typeof js.consumers.get === 'function') {
+                  console.log('Using newer JetStream API (consumers.get)');
+                  return js.consumers.get(streamName, consumerName);
+                } else if (typeof js.consumer === 'function') {
+                  console.log('Using older JetStream API (consumer)');
+                  return js.consumer(streamName, { durable_name: consumerName });
+                } else {
+                  throw new Error('JetStream API does not support getting consumers');
+                }
+              },
+
+              // Method to add a consumer
+              async addConsumer(streamName, config) {
+                if (typeof js.consumers === 'object' && typeof js.consumers.add === 'function') {
+                  console.log('Using newer JetStream API (consumers.add)');
+                  return js.consumers.add(streamName, config);
+                } else if (typeof js.addConsumer === 'function') {
+                  console.log('Using older JetStream API (addConsumer)');
+                  return js.addConsumer(streamName, config);
+                } else {
+                  throw new Error('JetStream API does not support adding consumers');
+                }
+              },
+
+              // Method to publish a message
+              async publish(subject, data) {
+                if (typeof js.publish === 'function') {
+                  console.log('Using JetStream publish');
+                  return js.publish(subject, data);
+                } else {
+                  console.log('Falling back to regular NATS publish');
+                  return nc.publish(subject, data);
+                }
+              }
+            };
+
+            // Replace the original js object with our wrapper
+            js = jsWrapper;
+            console.log('Created JetStream API compatibility wrapper');
+          }
+        } else {
+          console.log('JetStream not available in this NATS client version');
+          js = null;
+        }
+      } catch (jsErr) {
+        console.error(`JetStream initialization error: ${jsErr.message}`);
+        js = null;
+      }
     } else {
       console.log('Running in mock data mode (no NATS connection)');
     }
@@ -697,11 +1066,13 @@ async function start() {
   }
 
   // Health check endpoint
-  app.get('/health', (req, res) => {
+  app.get('/health', (_, res) => {
     res.json({
       status: 'healthy',
       nats: nc ? 'connected' : 'disconnected',
-      mode: nc ? 'connected' : 'mock'
+      jetstream: js ? 'available' : 'unavailable',
+      mode: nc ? 'connected' : 'mock',
+      uptime: process.uptime()
     });
   });
 
@@ -775,6 +1146,38 @@ async function start() {
     } catch (error) {
       console.error('Error adding runbook:', error);
       res.status(500).json({ error: error.message || 'Failed to add runbook' });
+    }
+  });
+
+  // Execute a runbook
+  app.post('/api/runbook/execute', async (req, res) => {
+    try {
+      const { runbookId } = req.body;
+      if (!runbookId) {
+        return res.status(400).json({ error: 'Runbook ID is required' });
+      }
+
+      const result = await executeRunbook(js, runbookId);
+      res.json(result);
+    } catch (error) {
+      console.error('Error executing runbook:', error);
+      res.status(500).json({ error: error.message || 'Failed to execute runbook' });
+    }
+  });
+
+  // Get runbook execution status
+  app.get('/api/runbook/status/:executionId', (req, res) => {
+    try {
+      const { executionId } = req.params;
+      if (!executionId) {
+        return res.status(400).json({ error: 'Execution ID is required' });
+      }
+
+      const status = getRunbookExecutionStatus(executionId);
+      res.json(status);
+    } catch (error) {
+      console.error('Error getting execution status:', error);
+      res.status(500).json({ error: error.message || 'Failed to get execution status' });
     }
   });
 

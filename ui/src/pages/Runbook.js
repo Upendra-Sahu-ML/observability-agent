@@ -10,11 +10,18 @@ import {
   List,
   ListItem,
   ListItemText,
+  ListItemButton,
   Divider,
   CircularProgress,
   Alert,
   Box,
-  Paper
+  Paper,
+  LinearProgress,
+  Chip,
+  Stepper,
+  Step,
+  StepLabel,
+  StepContent
 } from '@mui/material';
 import api from '../api';
 
@@ -23,6 +30,8 @@ export default function Runbook() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedRunbook, setSelectedRunbook] = useState(null);
+  const [executionStatus, setExecutionStatus] = useState({});
+  const [executingRunbook, setExecutingRunbook] = useState(null);
 
   useEffect(() => {
     // Fetch runbooks from the API
@@ -42,10 +51,93 @@ export default function Runbook() {
     setSelectedRunbook(runbook);
   };
 
-  const handleExecuteRunbook = (runbookId) => {
-    // In a real implementation, this would call an API to execute the runbook
-    console.log(`Executing runbook: ${runbookId}`);
-    alert(`Runbook ${runbookId} execution started`);
+  const handleExecuteRunbook = async (runbookId) => {
+    try {
+      setExecutingRunbook(runbookId);
+      setExecutionStatus(prev => ({
+        ...prev,
+        [runbookId]: { status: 'starting', progress: 0, message: 'Initializing execution...' }
+      }));
+
+      // Call the API to execute the runbook
+      const response = await api.post(`/runbook/execute`, { runbookId });
+
+      // Update execution status with the execution ID
+      const executionId = response.data.executionId;
+      setExecutionStatus(prev => ({
+        ...prev,
+        [runbookId]: {
+          status: 'in_progress',
+          progress: 10,
+          message: 'Execution in progress...',
+          executionId
+        }
+      }));
+
+      // Start polling for status updates
+      pollExecutionStatus(runbookId, executionId);
+    } catch (err) {
+      console.error('Error executing runbook:', err);
+      setExecutionStatus(prev => ({
+        ...prev,
+        [runbookId]: { status: 'error', message: `Error: ${err.message}` }
+      }));
+    }
+  };
+
+  // Function to poll for execution status updates
+  const pollExecutionStatus = (runbookId, executionId) => {
+    const statusInterval = setInterval(async () => {
+      try {
+        const statusResponse = await api.get(`/runbook/status/${executionId}`);
+        const status = statusResponse.data;
+
+        setExecutionStatus(prev => ({
+          ...prev,
+          [runbookId]: {
+            status: status.status,
+            progress: status.progress || 0,
+            message: getStatusMessage(status.status),
+            steps: status.steps || [],
+            executionId
+          }
+        }));
+
+        // If execution is complete or failed, stop polling
+        if (status.status === 'completed' || status.status === 'failed') {
+          clearInterval(statusInterval);
+
+          // Clear executing runbook after a delay
+          setTimeout(() => {
+            if (executingRunbook === runbookId) {
+              setExecutingRunbook(null);
+            }
+          }, 5000);
+        }
+      } catch (err) {
+        console.error('Error polling execution status:', err);
+        // Don't stop polling on error, just log it
+      }
+    }, 3000); // Poll every 3 seconds
+
+    // Store the interval ID to clear it if component unmounts
+    return () => clearInterval(statusInterval);
+  };
+
+  // Helper function to get status message
+  const getStatusMessage = (status) => {
+    switch (status) {
+      case 'starting':
+        return 'Initializing execution...';
+      case 'in_progress':
+        return 'Execution in progress...';
+      case 'completed':
+        return 'Execution completed successfully!';
+      case 'failed':
+        return 'Execution failed. Check logs for details.';
+      default:
+        return 'Unknown status';
+    }
   };
 
   return (
@@ -71,15 +163,27 @@ export default function Runbook() {
                 <List>
                   {runbooks.map((runbook) => (
                     <React.Fragment key={runbook.id}>
-                      <ListItem
-                        button
-                        onClick={() => handleRunbookSelect(runbook)}
-                        selected={selectedRunbook && selectedRunbook.id === runbook.id}
-                      >
-                        <ListItemText
-                          primary={runbook.title}
-                          secondary={`Service: ${runbook.service}`}
-                        />
+                      <ListItem disablePadding>
+                        <ListItemButton
+                          onClick={() => handleRunbookSelect(runbook)}
+                          selected={selectedRunbook && selectedRunbook.id === runbook.id}
+                        >
+                          <ListItemText
+                            primary={runbook.title}
+                            secondary={`Service: ${runbook.service}`}
+                          />
+                          {executionStatus[runbook.id] && (
+                            <Chip
+                              size="small"
+                              label={executionStatus[runbook.id].status}
+                              color={
+                                executionStatus[runbook.id].status === 'completed' ? 'success' :
+                                executionStatus[runbook.id].status === 'failed' ? 'error' :
+                                executionStatus[runbook.id].status === 'in_progress' ? 'primary' : 'default'
+                              }
+                            />
+                          )}
+                        </ListItemButton>
                       </ListItem>
                       <Divider />
                     </React.Fragment>
@@ -115,14 +219,76 @@ export default function Runbook() {
                     ))}
                   </List>
                 </CardContent>
+                {/* Execution Status */}
+                {executionStatus[selectedRunbook.id] && (
+                  <Box sx={{ mt: 2, mb: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
+                    <Typography variant="h6" gutterBottom>
+                      Execution Status
+                    </Typography>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                      <Typography variant="body1" sx={{ mr: 2 }}>
+                        Status:
+                      </Typography>
+                      <Chip
+                        label={executionStatus[selectedRunbook.id].status}
+                        color={
+                          executionStatus[selectedRunbook.id].status === 'completed' ? 'success' :
+                          executionStatus[selectedRunbook.id].status === 'failed' ? 'error' :
+                          executionStatus[selectedRunbook.id].status === 'in_progress' ? 'primary' : 'default'
+                        }
+                      />
+                    </Box>
+
+                    <Typography variant="body2" sx={{ mb: 1 }}>
+                      {executionStatus[selectedRunbook.id].message}
+                    </Typography>
+
+                    {executionStatus[selectedRunbook.id].progress !== undefined && (
+                      <Box sx={{ width: '100%', mb: 2 }}>
+                        <LinearProgress
+                          variant="determinate"
+                          value={executionStatus[selectedRunbook.id].progress}
+                        />
+                        <Typography variant="caption" align="center" display="block">
+                          {executionStatus[selectedRunbook.id].progress}% Complete
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {executionStatus[selectedRunbook.id].steps && executionStatus[selectedRunbook.id].steps.length > 0 && (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="subtitle1" gutterBottom>
+                          Execution Steps:
+                        </Typography>
+                        <Stepper orientation="vertical">
+                          {executionStatus[selectedRunbook.id].steps.map((step, index) => (
+                            <Step key={index} completed={step.status === 'completed'} active={step.status === 'in_progress'}>
+                              <StepLabel>{step.description}</StepLabel>
+                              <StepContent>
+                                {step.outcome && (
+                                  <Typography variant="body2" color="text.secondary">
+                                    {step.outcome}
+                                  </Typography>
+                                )}
+                              </StepContent>
+                            </Step>
+                          ))}
+                        </Stepper>
+                      </Box>
+                    )}
+                  </Box>
+                )}
+
                 <CardActions>
                   <Button
                     size="small"
                     variant="contained"
                     color="primary"
                     onClick={() => handleExecuteRunbook(selectedRunbook.id)}
+                    disabled={executingRunbook === selectedRunbook.id}
                   >
-                    Execute Runbook
+                    {executingRunbook === selectedRunbook.id ? 'Executing...' : 'Execute Runbook'}
                   </Button>
                 </CardActions>
               </Card>

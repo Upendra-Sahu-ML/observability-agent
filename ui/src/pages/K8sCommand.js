@@ -13,15 +13,18 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogContentText,
   DialogActions,
   List,
   ListItem,
+  ListItemButton,
   ListItemText,
   ListItemSecondaryAction,
   Snackbar,
   Menu,
   MenuItem,
-  Tooltip
+  Tooltip,
+  Chip
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -31,7 +34,9 @@ import {
   Folder as FolderIcon,
   Download as DownloadIcon,
   MoreVert as MoreVertIcon,
-  ContentCopy as ContentCopyIcon
+  ContentCopy as ContentCopyIcon,
+  Info as InfoIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 import api from '../api';
 
@@ -47,7 +52,7 @@ export default function K8sCommand() {
     description: '',
     cells: [{ type: 'command', content: '', executedCommand: '', timestamp: new Date() }]
   });
-  
+
   // State for UI
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -57,26 +62,31 @@ export default function K8sCommand() {
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportService, setExportService] = useState('');
-  
+  const [contextDialogOpen, setContextDialogOpen] = useState(false);
+
+  // Session context state
+  const [sessionId, setSessionId] = useState(null);
+  const [contextData, setContextData] = useState(null);
+
   // Ref for auto-scrolling
   const bottomRef = useRef(null);
-  
+
   // Menu state
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   const [selectedCellIndex, setSelectedCellIndex] = useState(null);
-  
+
   // Load notebooks on component mount
   useEffect(() => {
     fetchNotebooks();
   }, []);
-  
+
   // Auto-scroll to bottom when cells are added
   useEffect(() => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [notebook.cells.length]);
-  
+
   // Fetch all notebooks
   const fetchNotebooks = async () => {
     try {
@@ -91,21 +101,21 @@ export default function K8sCommand() {
       });
     }
   };
-  
+
   // Handle cell content change
   const handleCellChange = (index, content) => {
     const updatedCells = [...notebook.cells];
     updatedCells[index] = { ...updatedCells[index], content };
     setNotebook({ ...notebook, cells: updatedCells });
   };
-  
+
   // Add a new cell
   const addCell = (index) => {
     const newCells = [...notebook.cells];
     newCells.splice(index + 1, 0, { type: 'command', content: '', executedCommand: '', timestamp: new Date() });
     setNotebook({ ...notebook, cells: newCells });
   };
-  
+
   // Delete a cell
   const deleteCell = (index) => {
     if (notebook.cells.length === 1) {
@@ -113,37 +123,54 @@ export default function K8sCommand() {
       handleCellChange(index, '');
       return;
     }
-    
+
     const newCells = [...notebook.cells];
     newCells.splice(index, 1);
     setNotebook({ ...notebook, cells: newCells });
   };
-  
+
   // Execute a cell
   const executeCell = async (index) => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const cell = notebook.cells[index];
-      
-      // Convert natural language to K8s command
-      const convertResponse = await k8sApi.post('/convert', { text: cell.content });
+
+      // Convert natural language to K8s command with session context
+      const convertResponse = await k8sApi.post('/convert', {
+        text: cell.content,
+        sessionId: sessionId
+      });
+
       const command = convertResponse.data.command;
-      
-      // Execute the command
-      const executeResponse = await k8sApi.post('/execute', { command });
-      
+
+      // Update session ID if it's new
+      if (!sessionId && convertResponse.data.sessionId) {
+        setSessionId(convertResponse.data.sessionId);
+      }
+
+      // Execute the command with session context
+      const executeResponse = await k8sApi.post('/execute', {
+        command,
+        sessionId: convertResponse.data.sessionId || sessionId
+      });
+
+      // Update session ID if needed
+      if (executeResponse.data.sessionId && (!sessionId || sessionId !== executeResponse.data.sessionId)) {
+        setSessionId(executeResponse.data.sessionId);
+      }
+
       // Update the cell with the result
       const updatedCells = [...notebook.cells];
       updatedCells[index] = { ...updatedCells[index], executedCommand: command };
-      
+
       // Add a result cell if it doesn't exist
       if (index + 1 >= updatedCells.length || updatedCells[index + 1].type !== 'result') {
         updatedCells.splice(index + 1, 0, {
           type: 'result',
-          content: executeResponse.data.success 
-            ? executeResponse.data.output 
+          content: executeResponse.data.success
+            ? executeResponse.data.output
             : `Error: ${executeResponse.data.error}`,
           timestamp: new Date()
         });
@@ -151,13 +178,13 @@ export default function K8sCommand() {
         // Update existing result cell
         updatedCells[index + 1] = {
           ...updatedCells[index + 1],
-          content: executeResponse.data.success 
-            ? executeResponse.data.output 
+          content: executeResponse.data.success
+            ? executeResponse.data.output
             : `Error: ${executeResponse.data.error}`,
           timestamp: new Date()
         };
       }
-      
+
       setNotebook({ ...notebook, cells: updatedCells });
     } catch (err) {
       console.error('Error executing cell:', err);
@@ -166,15 +193,30 @@ export default function K8sCommand() {
       setLoading(false);
     }
   };
-  
+
   // Save notebook
   const saveNotebook = async () => {
     try {
       setLoading(true);
-      
+
+      // Validate and clean up cells before saving
+      const cleanedCells = notebook.cells.map(cell => {
+        // Ensure content is never empty (MongoDB validation requires this)
+        return {
+          ...cell,
+          content: cell.content || ' ' // Use a space if content is empty
+        };
+      });
+
+      const notebookToSave = {
+        ...notebook,
+        cells: cleanedCells
+      };
+
       if (notebook._id) {
         // Update existing notebook
-        await k8sApi.put(`/notebooks/${notebook._id}`, notebook);
+        const response = await k8sApi.put(`/notebooks/${notebook._id}`, notebookToSave);
+        setNotebook(response.data);
         setNotification({
           open: true,
           message: 'Notebook updated successfully',
@@ -182,7 +224,7 @@ export default function K8sCommand() {
         });
       } else {
         // Create new notebook
-        const response = await k8sApi.post('/notebooks', notebook);
+        const response = await k8sApi.post('/notebooks', notebookToSave);
         setNotebook(response.data);
         setNotification({
           open: true,
@@ -190,7 +232,7 @@ export default function K8sCommand() {
           severity: 'success'
         });
       }
-      
+
       // Refresh notebooks list
       fetchNotebooks();
       setSaveDialogOpen(false);
@@ -205,19 +247,22 @@ export default function K8sCommand() {
       setLoading(false);
     }
   };
-  
+
   // Load notebook
   const loadNotebook = async (id) => {
     try {
       setLoading(true);
-      
+
       const response = await k8sApi.get(`/notebooks/${id}`);
       setNotebook(response.data);
-      
+
+      // Reset session ID to create a new context for the loaded notebook
+      setSessionId(null);
+
       setLoadDialogOpen(false);
       setNotification({
         open: true,
-        message: 'Notebook loaded successfully',
+        message: 'Notebook loaded successfully with fresh context',
         severity: 'success'
       });
     } catch (err) {
@@ -231,23 +276,23 @@ export default function K8sCommand() {
       setLoading(false);
     }
   };
-  
+
   // Export notebook as runbook
   const exportAsRunbook = async () => {
     try {
       setLoading(true);
-      
+
       if (!notebook._id) {
         // Save notebook first if it's not saved
         const response = await k8sApi.post('/notebooks', notebook);
         setNotebook(response.data);
       }
-      
+
       // Export as runbook
       await k8sApi.post(`/notebooks/${notebook._id}/export`, {
         service: exportService
       });
-      
+
       setExportDialogOpen(false);
       setNotification({
         open: true,
@@ -265,34 +310,38 @@ export default function K8sCommand() {
       setLoading(false);
     }
   };
-  
+
   // Create a new notebook
   const createNewNotebook = () => {
+    // Reset notebook
     setNotebook({
       name: 'Untitled Notebook',
       description: '',
       cells: [{ type: 'command', content: '', executedCommand: '', timestamp: new Date() }]
     });
-    
+
+    // Reset session ID to create a new context
+    setSessionId(null);
+
     setNotification({
       open: true,
-      message: 'Created new notebook',
+      message: 'Created new notebook with fresh context',
       severity: 'info'
     });
   };
-  
+
   // Open cell menu
   const openCellMenu = (event, index) => {
     setMenuAnchorEl(event.currentTarget);
     setSelectedCellIndex(index);
   };
-  
+
   // Close cell menu
   const closeCellMenu = () => {
     setMenuAnchorEl(null);
     setSelectedCellIndex(null);
   };
-  
+
   // Copy cell content to clipboard
   const copyCellContent = () => {
     if (selectedCellIndex !== null) {
@@ -305,33 +354,113 @@ export default function K8sCommand() {
     }
     closeCellMenu();
   };
-  
+
+  // Fetch context data
+  const fetchContextData = async () => {
+    if (!sessionId) {
+      setNotification({
+        open: true,
+        message: 'No active context. Run a command first to establish context.',
+        severity: 'info'
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await k8sApi.get(`/context/${sessionId}`);
+      setContextData(response.data.context);
+      setContextDialogOpen(true);
+    } catch (err) {
+      console.error('Error fetching context:', err);
+      setNotification({
+        open: true,
+        message: `Error fetching context: ${err.message}`,
+        severity: 'error'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reset context
+  const resetContext = () => {
+    setSessionId(null);
+    setContextData(null);
+    setContextDialogOpen(false);
+    setNotification({
+      open: true,
+      message: 'Context has been reset',
+      severity: 'success'
+    });
+  };
+
   return (
     <Container sx={{ mt: 4, mb: 8 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h4">
-          {notebook.name}
-        </Typography>
-        
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <Typography variant="h4">
+            {notebook.name}
+          </Typography>
+
+          {sessionId && (
+            <Tooltip title="Context is active - commands will maintain context between executions">
+              <Box
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  ml: 2,
+                  bgcolor: 'success.light',
+                  color: 'success.contrastText',
+                  px: 1,
+                  py: 0.5,
+                  borderRadius: 1,
+                  fontSize: '0.75rem',
+                  cursor: 'pointer'
+                }}
+                onClick={fetchContextData}
+              >
+                Context Active
+              </Box>
+            </Tooltip>
+          )}
+        </Box>
+
         <Box>
+          {sessionId && (
+            <>
+              <Tooltip title="View Current Context">
+                <IconButton onClick={fetchContextData} color="info">
+                  <InfoIcon />
+                </IconButton>
+              </Tooltip>
+
+              <Tooltip title="Reset Context">
+                <IconButton onClick={resetContext} color="warning">
+                  <RefreshIcon />
+                </IconButton>
+              </Tooltip>
+            </>
+          )}
+
           <Tooltip title="New Notebook">
             <IconButton onClick={createNewNotebook} color="primary">
               <AddIcon />
             </IconButton>
           </Tooltip>
-          
+
           <Tooltip title="Save Notebook">
             <IconButton onClick={() => setSaveDialogOpen(true)} color="primary">
               <SaveIcon />
             </IconButton>
           </Tooltip>
-          
+
           <Tooltip title="Load Notebook">
             <IconButton onClick={() => setLoadDialogOpen(true)} color="primary">
               <FolderIcon />
             </IconButton>
           </Tooltip>
-          
+
           <Tooltip title="Export as Runbook">
             <IconButton onClick={() => setExportDialogOpen(true)} color="primary">
               <DownloadIcon />
@@ -339,28 +468,28 @@ export default function K8sCommand() {
           </Tooltip>
         </Box>
       </Box>
-      
+
       {notebook.description && (
         <Typography variant="body1" sx={{ mb: 2 }}>
           {notebook.description}
         </Typography>
       )}
-      
+
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
-      
+
       {/* Notebook cells */}
       <Box sx={{ mb: 4 }}>
         {notebook.cells.map((cell, index) => (
-          <Paper 
-            key={index} 
-            elevation={1} 
-            sx={{ 
-              mb: 2, 
-              p: 2, 
+          <Paper
+            key={index}
+            elevation={1}
+            sx={{
+              mb: 2,
+              p: 2,
               backgroundColor: cell.type === 'result' ? '#f5f5f5' : 'white',
               borderLeft: cell.type === 'result' ? '4px solid #2196f3' : 'none'
             }}
@@ -371,40 +500,40 @@ export default function K8sCommand() {
                   <Typography variant="caption" sx={{ mr: 1 }}>
                     In [{index + 1}]:
                   </Typography>
-                  
+
                   <Box sx={{ flexGrow: 1 }} />
-                  
-                  <IconButton 
-                    size="small" 
+
+                  <IconButton
+                    size="small"
                     onClick={(e) => openCellMenu(e, index)}
                   >
                     <MoreVertIcon fontSize="small" />
                   </IconButton>
-                  
-                  <IconButton 
-                    size="small" 
-                    onClick={() => executeCell(index)} 
+
+                  <IconButton
+                    size="small"
+                    onClick={() => executeCell(index)}
                     disabled={loading || !cell.content.trim()}
                     color="primary"
                   >
                     {loading ? <CircularProgress size={20} /> : <PlayArrowIcon fontSize="small" />}
                   </IconButton>
-                  
-                  <IconButton 
-                    size="small" 
+
+                  <IconButton
+                    size="small"
                     onClick={() => addCell(index)}
                   >
                     <AddIcon fontSize="small" />
                   </IconButton>
-                  
-                  <IconButton 
-                    size="small" 
+
+                  <IconButton
+                    size="small"
                     onClick={() => deleteCell(index)}
                   >
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </Box>
-                
+
                 <TextField
                   fullWidth
                   multiline
@@ -414,7 +543,7 @@ export default function K8sCommand() {
                   onChange={(e) => handleCellChange(index, e.target.value)}
                   sx={{ mb: 1 }}
                 />
-                
+
                 {cell.executedCommand && (
                   <Box sx={{ mt: 1 }}>
                     <Typography variant="caption" color="text.secondary">
@@ -432,28 +561,28 @@ export default function K8sCommand() {
                   <Typography variant="caption" sx={{ mr: 1 }}>
                     Out [{index}]:
                   </Typography>
-                  
+
                   <Box sx={{ flexGrow: 1 }} />
-                  
-                  <IconButton 
-                    size="small" 
+
+                  <IconButton
+                    size="small"
                     onClick={(e) => openCellMenu(e, index)}
                   >
                     <MoreVertIcon fontSize="small" />
                   </IconButton>
-                  
-                  <IconButton 
-                    size="small" 
+
+                  <IconButton
+                    size="small"
                     onClick={() => deleteCell(index)}
                   >
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </Box>
-                
-                <Paper 
-                  variant="outlined" 
-                  sx={{ 
-                    p: 1, 
+
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: 1,
                     backgroundColor: '#f8f9fa',
                     maxHeight: '300px',
                     overflow: 'auto',
@@ -467,18 +596,18 @@ export default function K8sCommand() {
             )}
           </Paper>
         ))}
-        
+
         <div ref={bottomRef} />
-        
-        <Button 
-          startIcon={<AddIcon />} 
+
+        <Button
+          startIcon={<AddIcon />}
           onClick={() => addCell(notebook.cells.length - 1)}
           sx={{ mt: 2 }}
         >
           Add Cell
         </Button>
       </Box>
-      
+
       {/* Cell Menu */}
       <Menu
         anchorEl={menuAnchorEl}
@@ -490,7 +619,7 @@ export default function K8sCommand() {
           Copy Content
         </MenuItem>
       </Menu>
-      
+
       {/* Save Dialog */}
       <Dialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)}>
         <DialogTitle>Save Notebook</DialogTitle>
@@ -515,9 +644,9 @@ export default function K8sCommand() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
-          <Button 
-            onClick={saveNotebook} 
-            variant="contained" 
+          <Button
+            onClick={saveNotebook}
+            variant="contained"
             color="primary"
             disabled={loading || !notebook.name.trim()}
           >
@@ -525,10 +654,10 @@ export default function K8sCommand() {
           </Button>
         </DialogActions>
       </Dialog>
-      
+
       {/* Load Dialog */}
-      <Dialog 
-        open={loadDialogOpen} 
+      <Dialog
+        open={loadDialogOpen}
         onClose={() => setLoadDialogOpen(false)}
         maxWidth="md"
         fullWidth
@@ -540,15 +669,18 @@ export default function K8sCommand() {
           ) : (
             <List>
               {notebooks.map((nb) => (
-                <ListItem 
-                  key={nb._id} 
-                  button 
-                  onClick={() => loadNotebook(nb._id)}
+                <ListItem
+                  key={nb._id}
+                  disablePadding
                 >
-                  <ListItemText 
-                    primary={nb.name} 
-                    secondary={`${nb.description || 'No description'} • Last updated: ${new Date(nb.updatedAt).toLocaleString()}`} 
-                  />
+                  <ListItemButton
+                    onClick={() => loadNotebook(nb._id)}
+                  >
+                    <ListItemText
+                      primary={nb.name}
+                      secondary={`${nb.description || 'No description'} • Last updated: ${new Date(nb.updatedAt).toLocaleString()}`}
+                    />
+                  </ListItemButton>
                   <ListItemSecondaryAction>
                     <Typography variant="caption">
                       {nb.cells.length} cells
@@ -563,7 +695,7 @@ export default function K8sCommand() {
           <Button onClick={() => setLoadDialogOpen(false)}>Cancel</Button>
         </DialogActions>
       </Dialog>
-      
+
       {/* Export Dialog */}
       <Dialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)}>
         <DialogTitle>Export as Runbook</DialogTitle>
@@ -580,9 +712,9 @@ export default function K8sCommand() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setExportDialogOpen(false)}>Cancel</Button>
-          <Button 
-            onClick={exportAsRunbook} 
-            variant="contained" 
+          <Button
+            onClick={exportAsRunbook}
+            variant="contained"
             color="primary"
             disabled={loading}
           >
@@ -590,15 +722,119 @@ export default function K8sCommand() {
           </Button>
         </DialogActions>
       </Dialog>
-      
+
+      {/* Context Dialog */}
+      <Dialog
+        open={contextDialogOpen}
+        onClose={() => setContextDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Command Context
+          <IconButton
+            aria-label="close"
+            onClick={() => setContextDialogOpen(false)}
+            sx={{
+              position: 'absolute',
+              right: 8,
+              top: 8,
+            }}
+          >
+            <DeleteIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          {contextData ? (
+            <Box>
+              <DialogContentText>
+                This is the current context that will be used for command execution. The system will use this information to maintain context between commands.
+              </DialogContentText>
+
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle1" fontWeight="bold">Last Command:</Typography>
+                {contextData.lastCommand ? (
+                  <Paper variant="outlined" sx={{ p: 1, bgcolor: '#f8f9fa', fontFamily: 'monospace', mb: 2 }}>
+                    {contextData.lastCommand}
+                  </Paper>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">No previous command</Typography>
+                )}
+
+                <Typography variant="subtitle1" fontWeight="bold">Current Namespace:</Typography>
+                {contextData.lastNamespace ? (
+                  <Chip label={contextData.lastNamespace} color="primary" sx={{ mb: 2 }} />
+                ) : (
+                  <Typography variant="body2" color="text.secondary">No namespace set (will search across all namespaces)</Typography>
+                )}
+
+                {contextData.lastPods && contextData.lastPods.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" fontWeight="bold">Recent Pods:</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {contextData.lastPods.map((pod, index) => (
+                        <Chip
+                          key={index}
+                          label={pod.name}
+                          color={pod.status === 'Running' ? 'success' : 'warning'}
+                          variant="outlined"
+                        />
+                      ))}
+                    </Box>
+                  </Box>
+                )}
+
+                {contextData.lastServices && contextData.lastServices.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" fontWeight="bold">Recent Services:</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {contextData.lastServices.map((svc, index) => (
+                        <Chip
+                          key={index}
+                          label={svc.name}
+                          color="info"
+                          variant="outlined"
+                        />
+                      ))}
+                    </Box>
+                  </Box>
+                )}
+
+                {contextData.lastDeployments && contextData.lastDeployments.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" fontWeight="bold">Recent Deployments:</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {contextData.lastDeployments.map((deploy, index) => (
+                        <Chip
+                          key={index}
+                          label={deploy.name}
+                          color="secondary"
+                          variant="outlined"
+                        />
+                      ))}
+                    </Box>
+                  </Box>
+                )}
+              </Box>
+            </Box>
+          ) : (
+            <CircularProgress />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={resetContext} color="warning">Reset Context</Button>
+          <Button onClick={() => setContextDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Notification Snackbar */}
       <Snackbar
         open={notification.open}
         autoHideDuration={6000}
         onClose={() => setNotification({ ...notification, open: false })}
       >
-        <Alert 
-          onClose={() => setNotification({ ...notification, open: false })} 
+        <Alert
+          onClose={() => setNotification({ ...notification, open: false })}
           severity={notification.severity}
         >
           {notification.message}

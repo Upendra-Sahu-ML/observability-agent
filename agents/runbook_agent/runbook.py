@@ -46,7 +46,7 @@ class RunbookAgent:
             additional_sources=[self.jetstream_runbook_source]
         )
         self.runbook_execution_tool = RunbookExecutionTool()
-        
+
         # Create specialized agents for different aspects of runbook management
         self.runbook_finder = Agent(
             role="Runbook Finder",
@@ -59,7 +59,7 @@ class RunbookAgent:
                 self.runbook_search_tool.get_runbook_by_alert
             ]
         )
-        
+
         self.runbook_adapter = Agent(
             role="Runbook Adapter",
             goal="Adapt and enhance existing runbooks for the specific incident context",
@@ -70,7 +70,7 @@ class RunbookAgent:
                 self.runbook_execution_tool.generate_custom_runbook
             ]
         )
-        
+
         self.runbook_validator = Agent(
             role="Runbook Validator",
             goal="Validate runbook steps and ensure they will resolve the incident",
@@ -81,7 +81,7 @@ class RunbookAgent:
                 self.runbook_execution_tool.track_execution
             ]
         )
-        
+
         self.automation_expert = Agent(
             role="Automation Expert",
             goal="Automate runbook execution where possible and provide clear execution instructions",
@@ -92,7 +92,7 @@ class RunbookAgent:
                 self.runbook_execution_tool.execute_runbook
             ]
         )
-        
+
         # Keep the original runbook executor for backward compatibility
         self.runbook_executor = Agent(
             role="Runbook Executor",
@@ -141,6 +141,7 @@ class RunbookAgent:
                 # Check if RESPONSES stream exists and contains the root_cause_result subject
                 responses_stream_exists = False
                 has_root_cause_result = False
+                runbook_executions_exists = False
 
                 for stream in streams:
                     if stream.config.name == "RESPONSES":
@@ -148,7 +149,9 @@ class RunbookAgent:
                         if "root_cause_result" in stream.config.subjects:
                             has_root_cause_result = True
                             logger.info("RESPONSES stream includes root_cause_result subject")
-                            break
+                    elif stream.config.name == "RUNBOOK_EXECUTIONS":
+                        runbook_executions_exists = True
+                        logger.info("RUNBOOK_EXECUTIONS stream exists")
 
                 # If RESPONSES stream exists but doesn't have root_cause_result subject, add it
                 if responses_stream_exists and not has_root_cause_result:
@@ -187,6 +190,30 @@ class RunbookAgent:
                         logger.info("Created RESPONSES stream with orchestrator_response and root_cause_result subjects")
                     except Exception as e:
                         logger.error(f"Error creating RESPONSES stream: {str(e)}")
+
+                # Create RUNBOOK_EXECUTIONS stream if it doesn't exist
+                if not runbook_executions_exists:
+                    try:
+                        from nats.js.api import StreamConfig
+                        # Create RUNBOOK_EXECUTIONS stream
+                        executions_config = StreamConfig(
+                            name="RUNBOOK_EXECUTIONS",
+                            subjects=["runbook.execute", "runbook.status.*"],
+                            retention="limits",
+                            max_msgs=10000,
+                            max_bytes=1024*1024*100,  # 100MB
+                            max_age=3600*24*7,  # 7 days
+                            storage="memory",
+                            discard="old"
+                        )
+
+                        await self.js.add_stream(config=executions_config)
+                        logger.info("Created RUNBOOK_EXECUTIONS stream")
+                    except Exception as e:
+                        logger.error(f"Error creating RUNBOOK_EXECUTIONS stream: {str(e)}")
+
+                # Set JetStream client in the runbook execution tool
+                self.runbook_execution_tool.set_jetstream(self.js)
 
             except nats.errors.Error as e:
                 # Just log the error but continue - we can still work with the connection
@@ -234,17 +261,17 @@ class RunbookAgent:
             logger.warning(f"[RunbookAgent] Timeout waiting for alert data for alert ID: {alert_id}")
             await sub.unsubscribe()
             return {"alert_id": alert_id, "error": "Timeout waiting for data"}
-    
+
     def _create_specialized_runbook_tasks(self, root_cause_data, alert_data):
         """Create specialized runbook tasks for the crew"""
         alert_id = root_cause_data.get("alert_id", "unknown")
         root_cause = root_cause_data.get("root_cause", "Unknown root cause")
-        
+
         # Extract details from alert data
         service = alert_data.get("labels", {}).get("service", "unknown")
         severity = alert_data.get("labels", {}).get("severity", "unknown")
         description = alert_data.get("annotations", {}).get("description", "No description provided")
-        
+
         # Common incident information for all agents
         incident_info = f"""
         ## Alert Information
@@ -252,11 +279,11 @@ class RunbookAgent:
         - Service: {service}
         - Severity: {severity}
         - Description: {description}
-        
+
         ## Root Cause Analysis
         {root_cause}
         """
-        
+
         # Task for finding relevant runbooks
         finder_task = Task(
             description=incident_info + """
@@ -264,7 +291,7 @@ class RunbookAgent:
             1. Runbooks specific to this service or similar services
             2. Runbooks addressing similar root causes or symptoms
             3. Runbooks that match the technical components mentioned in the root cause analysis
-            
+
             Return:
             1. A list of relevant runbooks with brief descriptions
             2. The full content of the most relevant runbook
@@ -273,59 +300,59 @@ class RunbookAgent:
             agent=self.runbook_finder,
             expected_output="A detailed list of relevant runbooks and the content of the most applicable one"
         )
-        
+
         # Task for adapting runbooks
         adapter_task = Task(
             description="""
             Based on the runbooks found by the Runbook Finder, adapt them to the specific incident context.
-            
+
             1. Modify generic steps to address the specific root cause identified
             2. Add any missing steps necessary for this particular incident
             3. Remove any steps that are not applicable
             4. Ensure the steps directly address the identified root cause
-            
+
             Return a customized runbook with detailed step-by-step instructions.
             """,
             agent=self.runbook_adapter,
             expected_output="A customized runbook specifically adapted for this incident"
         )
-        
+
         # Task for validating runbook steps
         validator_task = Task(
             description="""
             Review and validate the customized runbook:
-            
+
             1. Verify that each step is technically correct and safe to execute
             2. Ensure the steps directly address the identified root cause
             3. Confirm that the steps are ordered logically
             4. Add verification steps after each major action
             5. Identify any potential risks or side effects
-            
+
             Return the validated runbook with any necessary corrections and added verification steps.
             """,
             agent=self.runbook_validator,
             expected_output="A validated and improved runbook with verification steps"
         )
-        
+
         # Task for automation recommendations
         automation_task = Task(
             description="""
             Analyze the validated runbook and:
-            
+
             1. Identify which steps can be safely automated
             2. Provide detailed execution instructions for steps requiring human intervention
             3. Include commands and scripts for automation where applicable
             4. Format the final runbook for easy execution by on-call engineers
-            
+
             Return the final runbook with automation recommendations and detailed execution instructions.
             """,
             agent=self.automation_expert,
             expected_output="A final runbook with automation recommendations and execution instructions"
         )
-        
+
         # Return all specialized tasks
         return [finder_task, adapter_task, validator_task, automation_task]
-    
+
     def _create_runbook_task(self, root_cause_data, alert_data):
         """Create a runbook generation task for the crew (backward compatibility)"""
         alert_id = root_cause_data.get("alert_id", "unknown")
@@ -370,10 +397,10 @@ class RunbookAgent:
         runbook_task = self._create_runbook_task(root_cause_data, alert_data)
 
         # Create crew with runbook manager
-        
+
         # Create specialized runbook tasks
         specialized_tasks = self._create_specialized_runbook_tasks(root_cause_data, alert_data)
-        
+
         # Create crew with specialized agents
         crew = Crew(
             agents=[
@@ -431,16 +458,53 @@ class RunbookAgent:
             # Negative acknowledge the message so it can be redelivered
             await msg.nak()
 
+    async def execution_handler(self, msg):
+        """Handle incoming NATS messages for runbook execution requests"""
+        try:
+            # Parse the incoming message
+            execution_request = json.loads(msg.data.decode())
+            execution_id = execution_request.get("executionId", "unknown")
+            runbook_id = execution_request.get("runbookId", "unknown")
+            runbook = execution_request.get("runbook", {})
+
+            logger.info(f"[RunbookAgent] Received execution request for runbook ID: {runbook_id}, execution ID: {execution_id}")
+
+            # Extract steps from the runbook
+            steps = runbook.get("steps", [])
+
+            if not steps:
+                logger.warning(f"[RunbookAgent] No steps found in runbook: {runbook_id}")
+                # Acknowledge the message even though there are no steps
+                await msg.ack()
+                return
+
+            # Execute the runbook using the execution tool
+            self.runbook_execution_tool.execute_runbook(
+                runbook_id=runbook_id,
+                steps=steps,
+                execution_id=execution_id
+            )
+
+            logger.info(f"[RunbookAgent] Started execution of runbook: {runbook_id}, execution ID: {execution_id}")
+
+            # Acknowledge the message
+            await msg.ack()
+
+        except Exception as e:
+            logger.error(f"[RunbookAgent] Error processing execution request: {str(e)}", exc_info=True)
+            # Negative acknowledge the message so it can be redelivered
+            await msg.nak()
+
     async def listen(self):
         """Listen for root cause results and generate enhanced runbooks"""
-        logger.info("[RunbookAgent] Starting to listen for root cause results on 'root_cause_result' channel")
+        logger.info("[RunbookAgent] Starting to listen for root cause results and runbook execution requests")
 
         # Connect to NATS if not already connected
         if not self.nats_client or not self.nats_client.is_connected:
             await self.connect()
 
-        # Create a durable consumer with a queue group for load balancing
-        consumer_config = ConsumerConfig(
+        # Create a durable consumer for root cause results
+        root_cause_consumer = ConsumerConfig(
             durable_name="runbook_agent",
             deliver_policy=DeliverPolicy.ALL,
             ack_policy="explicit",
@@ -448,15 +512,34 @@ class RunbookAgent:
             ack_wait=120,   # Wait 2 minutes for acknowledgment (runbook generation can take time)
         )
 
-        # Subscribe to the stream with the consumer configuration
+        # Subscribe to the root cause results
         await self.js.subscribe(
             "root_cause_result",
             cb=self.message_handler,
             queue="runbook_processors",
-            config=consumer_config
+            config=root_cause_consumer
         )
 
         logger.info("[RunbookAgent] Subscribed to root_cause_result stream")
+
+        # Create a durable consumer for runbook execution requests
+        execution_consumer = ConsumerConfig(
+            durable_name="runbook_executor",
+            deliver_policy=DeliverPolicy.ALL,
+            ack_policy="explicit",
+            max_deliver=3,  # Retry up to 3 times
+            ack_wait=30,    # Wait 30 seconds for acknowledgment
+        )
+
+        # Subscribe to the runbook execution requests
+        await self.js.subscribe(
+            "runbook.execute",
+            cb=self.execution_handler,
+            queue="runbook_executors",
+            config=execution_consumer
+        )
+
+        logger.info("[RunbookAgent] Subscribed to runbook.execute stream")
 
         # Keep the connection alive
         while True:
