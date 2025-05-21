@@ -9,11 +9,10 @@ data:
   nats.conf: |
     # Basic NATS configuration
     http_port: 8222
-    
+
     # JetStream configuration
     {{- if .Values.nats.jetstream.enabled }}
     jetstream {
-      domain: observability-agent
       {{- if .Values.nats.persistence.enabled }}
       # File-based storage
       store_dir: /data
@@ -23,13 +22,13 @@ data:
       {{- end }}
     }
     {{- end }}
-    
+
   js-streams.json: |
     {
       "streams": [
         {
           "name": "ALERTS",
-          "subjects": ["alerts", "alerts.*"],
+          "subjects": ["alerts", "alerts.>"],
           "retention": "limits",
           "max_msgs": 10000,
           "max_bytes": 104857600,
@@ -49,7 +48,7 @@ data:
         },
         {
           "name": "RESPONSES",
-          "subjects": ["orchestrator_response", "root_cause_result"],
+          "subjects": ["orchestrator_response"],
           "retention": "limits",
           "max_msgs": 10000,
           "max_bytes": 104857600,
@@ -69,7 +68,7 @@ data:
         },
         {
           "name": "ROOT_CAUSE",
-          "subjects": ["root_cause_analysis", "root_cause_result"],
+          "subjects": ["root_cause_analysis", "root_cause_result", "rootcause", "rootcause.*"],
           "retention": "limits",
           "max_msgs": 10000,
           "max_bytes": 104857600,
@@ -79,7 +78,87 @@ data:
         },
         {
           "name": "NOTIFICATIONS",
-          "subjects": ["notification_requests"],
+          "subjects": ["notification_requests", "notifications", "notifications.*"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "METRICS",
+          "subjects": ["metrics", "metrics.*"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "LOGS",
+          "subjects": ["logs", "logs.*"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "DEPLOYMENTS",
+          "subjects": ["deployments", "deployments.*"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "TRACES",
+          "subjects": ["traces", "traces.*"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "POSTMORTEMS",
+          "subjects": ["postmortems", "postmortems.*"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "RUNBOOKS",
+          "subjects": ["runbooks", "runbooks.*", "runbook", "runbook.data.*"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "RUNBOOK_EXECUTIONS",
+          "subjects": ["runbook.execute", "runbook.status.*"],
+          "retention": "limits",
+          "max_msgs": 10000,
+          "max_bytes": 104857600,
+          "max_age": 604800000000000,
+          "storage": "memory",
+          "discard": "old"
+        },
+        {
+          "name": "NOTEBOOKS",
+          "subjects": ["notebooks", "notebooks.*"],
           "retention": "limits",
           "max_msgs": 10000,
           "max_bytes": 104857600,

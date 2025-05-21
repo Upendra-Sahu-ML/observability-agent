@@ -1,0 +1,275 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-nats-init-script
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nats-init
+data:
+  init_nats_streams.py: |
+    #!/usr/bin/env python3
+    """
+    NATS Stream Initialization Script
+
+    This script initializes all required NATS streams for the observability agent.
+    It should be run as an init container in the NATS pod or as a Kubernetes job
+    that runs before any agent starts.
+    """
+
+    import asyncio
+    import json
+    import logging
+    import os
+    import sys
+    import nats
+    from nats.js.api import StreamConfig
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
+    logger = logging.getLogger("nats-stream-init")
+
+    # NATS connection parameters
+    NATS_URL = os.environ.get("NATS_URL", "nats://observability-agent-nats:4222")
+    CONFIG_PATH = os.environ.get("CONFIG_PATH", "/etc/nats-config/js-streams.json")
+
+    async def main():
+        """Main function to initialize NATS streams"""
+        logger.info(f"Connecting to NATS server at {NATS_URL}")
+
+        try:
+            # Connect to NATS
+            nc = await nats.connect(NATS_URL)
+            logger.info("Connected to NATS server")
+
+            # Create JetStream context
+            js = nc.jetstream()
+            logger.info("Created JetStream context")
+
+            # Load stream definitions from ConfigMap
+            try:
+                with open(CONFIG_PATH, 'r') as f:
+                    config = json.load(f)
+                    stream_definitions = config.get('streams', [])
+                    logger.info(f"Loaded {len(stream_definitions)} stream definitions from {CONFIG_PATH}")
+            except Exception as e:
+                logger.error(f"Failed to load stream definitions from {CONFIG_PATH}: {str(e)}")
+                stream_definitions = []
+
+            # If no stream definitions were loaded, use default definitions
+            if not stream_definitions:
+                logger.warning("Using default stream definitions")
+                stream_definitions = get_default_stream_definitions()
+
+            # Get existing streams
+            existing_streams = {}
+            try:
+                streams = await js.streams_info()
+                for stream in streams:
+                    existing_streams[stream.config.name] = stream.config
+                    logger.info(f"Found existing stream: {stream.config.name}")
+            except Exception as e:
+                logger.warning(f"Failed to get streams info: {str(e)}")
+
+            # Create or update streams
+            for stream_def in stream_definitions:
+                stream_name = stream_def.get('name')
+                subjects = stream_def.get('subjects', [])
+
+                if not stream_name or not subjects:
+                    logger.warning(f"Invalid stream definition: {stream_def}")
+                    continue
+
+                if stream_name in existing_streams:
+                    # Stream exists, check if it needs to be updated
+                    current_subjects = existing_streams[stream_name].subjects
+                    missing_subjects = [subj for subj in subjects if subj not in current_subjects]
+
+                    if missing_subjects:
+                        # Update the stream with the missing subjects
+                        try:
+                            updated_subjects = current_subjects + missing_subjects
+                            await js.update_stream(name=stream_name, subjects=updated_subjects)
+                            logger.info(f"Updated {stream_name} stream with subjects: {missing_subjects}")
+                        except Exception as e:
+                            logger.error(f"Failed to update {stream_name} stream: {str(e)}")
+                    else:
+                        logger.info(f"Stream {stream_name} already has all required subjects")
+                else:
+                    # Stream doesn't exist, create it
+                    try:
+                        # Create the stream
+                        config = StreamConfig(
+                            name=stream_name,
+                            subjects=subjects,
+                            retention=stream_def.get('retention', 'limits'),
+                            max_msgs=stream_def.get('max_msgs', 10000),
+                            max_bytes=stream_def.get('max_bytes', 104857600),  # 100MB
+                            max_age=stream_def.get('max_age', 604800000000000),  # 7 days in nanoseconds
+                            storage=stream_def.get('storage', 'memory'),
+                            discard=stream_def.get('discard', 'old')
+                        )
+                        await js.add_stream(config=config)
+                        logger.info(f"Created {stream_name} stream with subjects: {subjects}")
+                    except Exception as e:
+                        logger.error(f"Failed to create {stream_name} stream: {str(e)}")
+
+            # Close connection
+            await nc.close()
+            logger.info("NATS stream initialization completed")
+
+        except Exception as e:
+            logger.error(f"Error initializing NATS streams: {str(e)}")
+            sys.exit(1)
+
+    def get_default_stream_definitions():
+        """Get default stream definitions if ConfigMap is not available"""
+        return [
+            {
+                "name": "ALERTS",
+                "subjects": ["alerts", "alerts.>"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "AGENT_TASKS",
+                "subjects": ["metric_agent", "log_agent", "deployment_agent", "tracing_agent",
+                            "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "RESPONSES",
+                "subjects": ["orchestrator_response"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "ALERT_DATA",
+                "subjects": ["alert_data_request", "alert_data_response.*"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "ROOT_CAUSE",
+                "subjects": ["root_cause_analysis", "root_cause_result", "rootcause", "rootcause.*"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "METRICS",
+                "subjects": ["metrics", "metrics.*"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "LOGS",
+                "subjects": ["logs", "logs.*"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "DEPLOYMENTS",
+                "subjects": ["deployments", "deployments.*"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "TRACES",
+                "subjects": ["traces", "traces.*"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "POSTMORTEMS",
+                "subjects": ["postmortems", "postmortems.*"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "RUNBOOKS",
+                "subjects": ["runbooks", "runbooks.*", "runbook", "runbook.data.*"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "RUNBOOK_EXECUTIONS",
+                "subjects": ["runbook.execute", "runbook.status.*"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "NOTEBOOKS",
+                "subjects": ["notebooks", "notebooks.*"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            },
+            {
+                "name": "NOTIFICATIONS",
+                "subjects": ["notification_requests", "notifications", "notifications.*"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "memory",
+                "discard": "old"
+            }
+        ]
+
+    if __name__ == "__main__":
+        asyncio.run(main())

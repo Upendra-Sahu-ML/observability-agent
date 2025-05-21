@@ -1,6 +1,26 @@
-# Alert Publisher Tool
+# Observability Agent Test Data Generation Tools
 
-This tool helps you test the Observability Agent System by publishing sample alerts to NATS JetStream. It simulates various types of alerts that might occur in a production environment.
+This directory contains tools to help you test the Observability Agent System by publishing sample data to NATS JetStream. These tools simulate various types of data that might occur in a production environment.
+
+## Data Generation Scripts
+
+The following Node.js scripts are available for generating test data for the UI:
+
+- `generate_all_data.js` - All-in-one script that runs multiple data generators simultaneously
+- `publish_metrics.js` - Generates and publishes metrics data
+- `publish_logs.js` - Generates and publishes log data
+- `publish_deployments.js` - Generates and publishes deployment data
+- `publish_agent_status.js` - Generates and publishes agent status updates
+- `publish_traces.js` - Generates and publishes distributed tracing data
+- `publish_rootcauses.js` - Generates and publishes root cause analysis data
+- `publish_notifications.js` - Generates and publishes notification data
+- `publish_postmortems.js` - Generates and publishes postmortem data
+- `publish_runbooks.js` - Generates and publishes runbook data
+- `publish_alerts.js` - Generates and publishes alert data
+
+See the [Node.js Data Generation Scripts](#nodejs-data-generation-scripts) section below for more details.
+
+## Alert Publisher Tool
 
 ## Overview
 
@@ -172,7 +192,7 @@ When you publish alerts, you should observe the following in the Observability A
    ```bash
    # Using the NATS CLI
    nats stream info ALERTS
-   
+
    # Or from another pod with the NATS client
    kubectl exec -it observability-agent-nats-0 -- nats stream info ALERTS
    ```
@@ -194,19 +214,173 @@ When you publish alerts, you should observe the following in the Observability A
    - Check storage capacity
    - Validate data format
 
-## Best Practices
+## Node.js Data Generation Scripts
 
-1. **Testing Different Scenarios**
-   - Test each alert type
-   - Test multiple alerts in sequence
-   - Test high-volume scenarios
+These scripts provide a comprehensive way to generate test data for all components of the Observability Agent UI.
 
-2. **Monitoring System Response**
-   - Watch agent response times
-   - Monitor resource usage
-   - Check notification delivery
+### Prerequisites
 
-3. **Data Validation**
-   - Verify alert format
-   - Check data persistence
-   - Validate analysis results
+- Node.js (v14 or later)
+- NATS server with JetStream enabled (for publishing to NATS)
+- Access to the NATS server from your local machine
+
+### Testing Without NATS
+
+If you don't have a NATS server available, you can use the test data generator to verify that the data generation functions work correctly:
+
+```bash
+node test_data_generator.js --component=metrics --count=2
+```
+
+Options:
+- `--component=<name>`: Component to test (default: all)
+- `--count=<number>`: Number of items to generate (default: 3)
+- `--services=<list>`: Comma-separated list of services
+
+This will generate sample data and output it to the console without requiring a NATS server.
+
+### Common Usage
+
+All scripts support the following common options:
+
+- `--nats-url=<url>`: NATS server URL (default: `nats://localhost:4222`)
+- `--count=<number>`: Number of data items to generate
+- `--interval=<ms>`: Interval between publications in milliseconds
+- `--continuous`: Run continuously instead of stopping after `count` items
+- `--services=<list>`: Comma-separated list of services to generate data for
+
+### All-in-One Generator
+
+The `generate_all_data.js` script runs multiple data generators simultaneously:
+
+```bash
+node generate_all_data.js --nats-url=nats://localhost:4222 --duration=300 --components=metrics,logs,alerts
+```
+
+Options:
+- `--duration=<seconds>`: How long to run in seconds (default: 300)
+- `--components=<list>`: Comma-separated list of components to generate data for (default: all)
+  - Available components: metrics, logs, deployments, agents, traces, rootcauses, notifications, postmortems, runbooks, alerts
+
+### Individual Data Generators
+
+#### Agent Status Data
+
+```bash
+node publish_agent_status.js --nats-url=nats://localhost:4222 --continuous
+```
+
+Publishes agent status updates to the `AGENTS` stream.
+
+#### Metrics Data
+
+```bash
+node publish_metrics.js --nats-url=nats://localhost:4222 --count=20 --continuous
+```
+
+Publishes metrics data to the `METRICS` stream.
+
+#### Logs Data
+
+```bash
+node publish_logs.js --nats-url=nats://localhost:4222 --count=50 --continuous
+```
+
+Publishes log entries to the `LOGS` stream.
+
+#### Deployment Data
+
+```bash
+node publish_deployments.js --nats-url=nats://localhost:4222 --count=10
+```
+
+Publishes deployment events to the `DEPLOYMENTS` stream.
+
+#### Tracing Data
+
+```bash
+node publish_traces.js --nats-url=nats://localhost:4222 --count=15
+```
+
+Publishes distributed tracing data to the `TRACES` stream.
+
+#### Root Cause Analysis Data
+
+```bash
+node publish_rootcauses.js --nats-url=nats://localhost:4222 --count=8
+```
+
+Publishes root cause analysis results to the `ROOTCAUSES` stream.
+
+#### Notification Data
+
+```bash
+node publish_notifications.js --nats-url=nats://localhost:4222 --count=12
+```
+
+Publishes notification events to the `NOTIFICATIONS` stream.
+
+#### Postmortem Data
+
+```bash
+node publish_postmortems.js --nats-url=nats://localhost:4222 --count=5
+```
+
+Publishes postmortem documents to the `POSTMORTEMS` stream.
+
+#### Runbook Data
+
+```bash
+node publish_runbooks.js --nats-url=nats://localhost:4222 --count=8
+```
+
+Publishes runbooks to the `RUNBOOKS` stream.
+
+#### Alert Data
+
+```bash
+node publish_alerts.js --nats-url=nats://localhost:4222 --count=15 --active-ratio=0.3
+```
+
+Publishes alerts to the `ALERTS` stream.
+
+Options:
+- `--active-ratio=<float>`: Ratio of active to resolved alerts (default: 0.3)
+
+### Using with Kubernetes
+
+If your NATS server is running in Kubernetes, you can use port forwarding to access it:
+
+```bash
+# Forward the NATS port to your local machine
+kubectl port-forward service/nats 4222:4222 -n your-namespace
+
+# In another terminal, run the data generator
+node generate_all_data.js --nats-url=nats://localhost:4222
+```
+
+### Examples
+
+#### Generate a continuous stream of metrics and logs
+
+```bash
+node generate_all_data.js --components=metrics,logs --continuous
+```
+
+#### Generate a fixed number of alerts
+
+```bash
+node publish_alerts.js --count=20 --active-ratio=0.5
+```
+
+#### Generate data for a specific service
+
+```bash
+node publish_metrics.js --services=payment-service --count=50
+```
+
+#### Generate all types of data for 10 minutes
+
+```bash
+node generate_all_data.js --duration=600
+```

@@ -170,26 +170,9 @@ class RunbookAgent:
                     except Exception as e:
                         logger.error(f"Error updating RESPONSES stream: {str(e)}")
 
-                # If RESPONSES stream doesn't exist, we need to create it
+                # If RESPONSES stream doesn't exist, log a warning
                 if not responses_stream_exists:
-                    try:
-                        from nats.js.api import StreamConfig
-                        # Create RESPONSES stream with root_cause_result subject
-                        responses_config = StreamConfig(
-                            name="RESPONSES",
-                            subjects=["orchestrator_response", "root_cause_result"],
-                            retention="limits",
-                            max_msgs=10000,
-                            max_bytes=1024*1024*100,  # 100MB
-                            max_age=3600*24*7,  # 7 days
-                            storage="memory",
-                            discard="old"
-                        )
-
-                        await self.js.add_stream(config=responses_config)
-                        logger.info("Created RESPONSES stream with orchestrator_response and root_cause_result subjects")
-                    except Exception as e:
-                        logger.error(f"Error creating RESPONSES stream: {str(e)}")
+                    logger.warning("RESPONSES stream not found - it should be created by the NATS server")
 
                 # Create RUNBOOK_EXECUTIONS stream if it doesn't exist
                 if not runbook_executions_exists:

@@ -1,0 +1,32 @@
+{
+  "name": "observability-agent-test-scripts",
+  "version": "1.0.0",
+  "description": "Test data generation scripts for Observability Agent UI",
+  "main": "generate_all_data.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "generate": "node generate_all_data.js",
+    "metrics": "node publish_metrics.js",
+    "logs": "node publish_logs.js",
+    "deployments": "node publish_deployments.js",
+    "agents": "node publish_agent_status.js",
+    "traces": "node publish_traces.js",
+    "rootcauses": "node publish_rootcauses.js",
+    "notifications": "node publish_notifications.js",
+    "postmortems": "node publish_postmortems.js",
+    "runbooks": "node publish_runbooks.js",
+    "alerts": "node publish_alerts.js"
+  },
+  "keywords": [
+    "observability",
+    "testing",
+    "nats",
+    "data-generation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "nats": "^2.10.0",
+    "axios": "^1.5.0"
+  }
+}

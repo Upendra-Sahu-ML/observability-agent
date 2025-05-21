@@ -8,7 +8,7 @@ from datetime import datetime
 from crewai import Agent, Task, Crew
 from crewai.llm import LLM
 from crewai.tools import tool
-from crewai import process
+from crewai import Process
 from dotenv import load_dotenv
 from common.tools.metric_tools import (
     PrometheusQueryTool,
@@ -27,22 +27,22 @@ class MetricAgent:
         self.nats_server = nats_server
         self.nats_client = None
         self.js = None  # JetStream context
-        
+
         # Prometheus configuration
         self.prometheus_url = prometheus_url
-        
+
         # OpenAI API key from environment
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         if not self.openai_api_key:
             logger.warning("OPENAI_API_KEY environment variable not set")
-        
+
         # Initialize OpenAI model
         self.llm = LLM(model=os.environ.get("OPENAI_MODEL", "gpt-4"))
-        
+
         # Initialize metric tools
         self.prometheus_tool = PrometheusQueryTool(prometheus_url=self.prometheus_url)
         self.metric_analysis_tool = MetricAnalysisTool()
-        
+
         # Create specialized agents for different aspects of metric analysis
         self.system_metrics_analyst = Agent(
             role="System Metrics Analyst",
@@ -57,7 +57,7 @@ class MetricAgent:
                 self.metric_analysis_tool.analyze_threshold
             ]
         )
-        
+
         self.application_metrics_analyst = Agent(
             role="Application Metrics Analyst",
             goal="Analyze application-specific metrics to identify service issues",
@@ -71,7 +71,7 @@ class MetricAgent:
                 self.metric_analysis_tool.analyze_metrics
             ]
         )
-        
+
         self.trend_analyst = Agent(
             role="Metric Trend Analyst",
             goal="Analyze metric trends and patterns over time",
@@ -83,7 +83,7 @@ class MetricAgent:
                 self.metric_analysis_tool.analyze_trend
             ]
         )
-        
+
         self.anomaly_detector = Agent(
             role="Metric Anomaly Detector",
             goal="Detect unusual patterns and outliers in metrics",
@@ -95,7 +95,7 @@ class MetricAgent:
                 self.metric_analysis_tool.analyze_anomalies
             ]
         )
-        
+
         # Keep the original metric analyzer for backward compatibility
         self.metric_analyzer = Agent(
             role="Metric Analyzer",
@@ -110,7 +110,7 @@ class MetricAgent:
                 self.prometheus_tool.get_memory_metrics,
                 self.prometheus_tool.get_error_rate,
                 self.prometheus_tool.get_service_health,
-                
+
                 # Metric analysis tools
                 self.metric_analysis_tool.analyze_trend,
                 self.metric_analysis_tool.analyze_anomalies,
@@ -118,18 +118,18 @@ class MetricAgent:
                 self.metric_analysis_tool.analyze_metrics
             ]
         )
-    
+
     async def connect(self):
         """Connect to NATS server and set up JetStream"""
         try:
             # Connect to NATS server
             self.nats_client = await nats.connect(self.nats_server)
             logger.info(f"Connected to NATS server at {self.nats_server}")
-            
+
             # Create JetStream context
             self.js = self.nats_client.jetstream()
-            
-            # Check if streams exist, don't try to create them if they do
+
+            # Check if streams exist, create them if they don't
             try:
                 # Look up streams first
                 streams = []
@@ -140,39 +140,54 @@ class MetricAgent:
 
                 # Get stream names
                 stream_names = [stream.config.name for stream in streams]
-                
-                # Only create AGENT_TASKS stream if it doesn't already exist
-                if "AGENT_TASKS" not in stream_names:
-                    await self.js.add_stream(
-                        name="AGENT_TASKS", 
-                        subjects=["metric_agent"]
-                    )
-                    logger.info("Created AGENT_TASKS stream")
-                else:
-                    logger.info("AGENT_TASKS stream already exists")
-                
-                # Only create RESPONSES stream if it doesn't already exist
-                if "RESPONSES" not in stream_names:
-                    await self.js.add_stream(
-                        name="RESPONSES", 
-                        subjects=["orchestrator_response"]
-                    )
-                    logger.info("Created RESPONSES stream")
-                else:
-                    logger.info("RESPONSES stream already exists")
-                
+
+                # Define required streams with their subjects
+                stream_definitions = {
+                    "AGENT_TASKS": ["metric_agent", "log_agent", "deployment_agent", "tracing_agent",
+                                   "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent"],
+                    "RESPONSES": ["orchestrator_response"]
+                }
+
+                # Create required streams if they don't exist
+                for stream_name, subjects in stream_definitions.items():
+                    if stream_name in stream_names:
+                        logger.info(f"{stream_name} stream exists")
+
+                        # Check if the stream has all the required subjects
+                        try:
+                            stream_info = await self.js.stream_info(stream_name)
+                            current_subjects = stream_info.config.subjects
+
+                            # Check if any subjects are missing
+                            missing_subjects = [subj for subj in subjects if subj not in current_subjects]
+
+                            if missing_subjects:
+                                # Update the stream with the missing subjects
+                                updated_subjects = current_subjects + missing_subjects
+                                await self.js.update_stream(name=stream_name, subjects=updated_subjects)
+                                logger.info(f"Updated {stream_name} stream with subjects: {missing_subjects}")
+                        except Exception as e:
+                            logger.warning(f"Failed to update {stream_name} stream: {str(e)}")
+                    else:
+                        try:
+                            # Create the stream
+                            await self.js.add_stream(name=stream_name, subjects=subjects)
+                            logger.info(f"Created {stream_name} stream with subjects: {subjects}")
+                        except Exception as e:
+                            logger.error(f"Failed to create {stream_name} stream: {str(e)}")
+
             except nats.errors.Error as e:
                 # Print error but don't raise - we can still work with existing streams
                 logger.warning(f"Stream setup error: {str(e)}")
-        
+
         except Exception as e:
             logger.error(f"Failed to connect to NATS: {str(e)}")
             raise
-    
+
     def _determine_observed_issue(self, alert, metrics_data):
         """Determine the type of metric issue observed based on the alert and metrics"""
         alert_name = alert.get("labels", {}).get("alertname", "").lower()
-        
+
         if "cpu" in alert_name:
             return "CPU utilization issue"
         elif "memory" in alert_name:
@@ -187,12 +202,12 @@ class MetricAgent:
             return "System saturation"
         else:
             return "Unspecified metric anomaly"
-    
+
     def _get_time_range(self, alert):
         """Get appropriate time range for metric queries based on alert"""
         # Default to 30 minutes before alert
         minutes_before = 30
-        
+
         # If we have the alert start time, use that
         start_time = alert.get("startsAt")
         if start_time:
@@ -200,10 +215,10 @@ class MetricAgent:
             # This is a simplification - in production code you would want to handle
             # proper time conversion from ISO format to Prometheus format
             return f"-{minutes_before}m"
-        
+
         # Default fallback
         return f"-{minutes_before}m"
-    
+
     def _create_specialized_metrics_tasks(self, alert):
         """Create specialized metrics analysis tasks for each analyst"""
         alert_id = alert.get("alert_id", "unknown")
@@ -211,10 +226,10 @@ class MetricAgent:
         service = alert.get("labels", {}).get("service", "")
         namespace = alert.get("labels", {}).get("namespace", "default")
         instance = alert.get("labels", {}).get("instance", "")
-        
+
         # Time range to analyze
         time_range = self._get_time_range(alert)
-        
+
         # Base context information that all analyzers will use
         base_context = f"""
         Alert: {alert_name} (ID: {alert_id})
@@ -223,11 +238,11 @@ class MetricAgent:
         Instance: {instance}
         Time range to analyze: {time_range} to now
         """
-        
+
         # Determine which metrics to query based on alert name
         system_metrics = []
         application_metrics = []
-        
+
         # System metrics to analyze
         if "cpu" in alert_name.lower() or "memory" in alert_name.lower() or "disk" in alert_name.lower():
             system_metrics.extend([
@@ -243,7 +258,7 @@ class MetricAgent:
                 f'cpu_usage_total{{service="{service}"}}',
                 f'memory_usage{{service="{service}"}}'
             ])
-        
+
         # Application metrics to analyze
         if "latency" in alert_name.lower() or "response" in alert_name.lower() or "error" in alert_name.lower():
             application_metrics.extend([
@@ -257,86 +272,86 @@ class MetricAgent:
                 f'http_requests_total{{service="{service}"}}',
                 f'http_errors_total{{service="{service}"}}'
             ])
-        
+
         # System metrics analysis task
         system_task = Task(
             description=base_context + f"""
             Focus on analyzing system-level metrics:
-            
+
             Use these Prometheus queries to gather data:
             {', '.join(system_metrics)}
-            
+
             Specifically look for:
             1. Resource exhaustion (CPU, memory, disk)
             2. System saturation points
             3. Infrastructure-level bottlenecks
             4. Hardware or OS-level constraints
-            
+
             Provide a detailed analysis of system metrics, focusing on resource utilization and constraints.
             """,
             agent=self.system_metrics_analyst,
             expected_output="A detailed analysis of system-level metrics"
         )
-        
+
         # Application metrics analysis task
         application_task = Task(
             description=base_context + f"""
             Focus on analyzing application-level metrics:
-            
+
             Use these Prometheus queries to gather data:
             {', '.join(application_metrics)}
-            
+
             Specifically look for:
             1. Error rates and patterns
             2. Latency increases or anomalies
             3. Request rate changes
             4. Service health indicators
-            
+
             Provide a detailed analysis of application metrics, focusing on service behavior and health.
             """,
             agent=self.application_metrics_analyst,
             expected_output="A detailed analysis of application-level metrics"
         )
-        
+
         # Trend analysis task
         trend_task = Task(
             description=base_context + """
             Focus on analyzing metric trends over time:
-            
+
             Specifically look for:
             1. Gradual increases or decreases
             2. Cyclical patterns or seasonality
             3. Long-term trends that may indicate developing issues
             4. Changes in patterns compared to normal baseline
-            
+
             Provide a detailed analysis of metric trends, focusing on how metrics have changed over time.
             """,
             agent=self.trend_analyst,
             expected_output="A detailed analysis of metric trends over time"
         )
-        
+
         # Anomaly detection task
         anomaly_task = Task(
             description=base_context + """
             Focus on detecting anomalies in metrics:
-            
+
             Specifically look for:
             1. Sudden spikes or drops
             2. Outliers and statistical anomalies
             3. Unusual combinations of metric values
             4. Deviation from expected patterns
-            
+
             Provide a detailed analysis of metric anomalies, focusing on unusual or unexpected behavior.
             """,
             agent=self.anomaly_detector,
             expected_output="A detailed analysis of metric anomalies"
         )
-        
+
         # Return all specialized tasks and metadata
         metrics_queries = system_metrics + application_metrics
-        
+
         return [system_task, application_task, trend_task, anomaly_task], metrics_queries, time_range
-    
+
     def _create_metrics_analysis_task(self, alert):
         """Create a metrics analysis task for the crew (backward compatibility)"""
         alert_id = alert.get("alert_id", "unknown")
@@ -344,10 +359,10 @@ class MetricAgent:
         service = alert.get("labels", {}).get("service", "")
         namespace = alert.get("labels", {}).get("namespace", "default")
         instance = alert.get("labels", {}).get("instance", "")
-        
+
         # Determine which metrics to query based on alert name
         metrics_queries = []
-        
+
         if "cpu" in alert_name.lower():
             metrics_queries.extend([
                 f'cpu_usage_total{{service="{service}"}}',
@@ -374,44 +389,44 @@ class MetricAgent:
                 f'up{{service="{service}"}}',
                 f'http_requests_total{{service="{service}"}}'
             ])
-        
+
         # Time range to analyze
         time_range = self._get_time_range(alert)
-        
+
         task = Task(
             description=f"""
             Analyze the following metrics for alert: {alert_name} (ID: {alert_id})
-            
+
             Service: {service}
             Namespace: {namespace}
             Instance: {instance}
-            
+
             Use these Prometheus queries to gather data:
             {', '.join(metrics_queries)}
-            
+
             Time range to analyze: {time_range} to now
-            
+
             Specifically look for:
             1. Sudden spikes or drops in values
             2. Gradual increases that cross thresholds
             3. Correlations between different metrics
             4. Patterns that might indicate the root cause
-            
+
             Return a comprehensive analysis of what the metrics show, potential causes, and any recommended further investigation.
             """,
             agent=self.metric_analyzer,
             expected_output="A detailed analysis of the metrics related to the alert"
         )
-        
+
         return task, metrics_queries, time_range
-    
+
     async def analyze_metrics(self, alert):
         """Analyze metrics using multi-agent crewAI"""
         logger.info(f"Analyzing metrics for alert ID: {alert.get('alert_id', 'unknown')}")
-        
+
         # Create specialized metrics analysis tasks
         tasks, metrics_queries, time_range = self._create_specialized_metrics_tasks(alert)
-        
+
         # Create crew with specialized analyzers
         crew = Crew(
             agents=[
@@ -422,12 +437,12 @@ class MetricAgent:
             ],
             tasks=tasks,
             verbose=True,
-            process=process.MapReduce()  # Run analyses in parallel and combine results
+            process=Process.sequential  # Run analyses sequentially
         )
-        
+
         # Execute crew analysis
         result = crew.kickoff()
-        
+
         # Return both the analysis result and metadata
         metrics_data = {
             "queries": metrics_queries,
@@ -435,53 +450,53 @@ class MetricAgent:
             "service": alert.get("labels", {}).get("service", ""),
             "instance": alert.get("labels", {}).get("instance", "")
         }
-        
+
         return result, metrics_data
-    
+
     async def message_handler(self, msg):
         """Handle incoming NATS messages"""
         try:
             # Parse the alert data
             alert = json.loads(msg.data.decode())
             logger.info(f"[MetricAgent] Processing alert: {alert.get('alert_id', 'unknown')}")
-            
+
             # Use crewAI to analyze the metrics
             analysis_result, metrics_data = await self.analyze_metrics(alert)
-            
+
             # Determine what type of metric issue was observed based on the alert and metrics
             observed_issue = self._determine_observed_issue(alert, metrics_data)
-            
+
             # Prepare result for the orchestrator
             result = {
-                "agent": "metric", 
+                "agent": "metric",
                 "observed": observed_issue,
                 "analysis": str(analysis_result),
                 "alert_id": alert.get("alert_id", "unknown"),
-                "timestamp": datetime.utcnow().isoformat() + "Z"
+                "timestamp": datetime.now(datetime.timezone.utc).isoformat()
             }
-            
+
             logger.info(f"[MetricAgent] Sending analysis for alert ID: {result['alert_id']}")
-            
+
             # Publish result to orchestrator
             await self.js.publish("orchestrator_response", json.dumps(result).encode())
             logger.info(f"[MetricAgent] Published analysis result for alert ID: {result['alert_id']}")
-            
+
             # Acknowledge the message
             await msg.ack()
-            
+
         except Exception as e:
             logger.error(f"[MetricAgent] Error processing message: {str(e)}", exc_info=True)
             # Negative acknowledge the message so it can be redelivered
             await msg.nak()
-    
+
     async def listen(self):
         """Listen for alerts from the orchestrator using NATS JetStream"""
         logger.info("[MetricAgent] Starting to listen for alerts")
-        
+
         # Connect to NATS if not already connected
         if not self.nats_client or not self.nats_client.is_connected:
             await self.connect()
-        
+
         # Create a durable consumer with a queue group for load balancing
         consumer_config = ConsumerConfig(
             durable_name="metric_agent",
@@ -490,7 +505,7 @@ class MetricAgent:
             max_deliver=5,  # Retry up to 5 times
             ack_wait=60,    # Wait 60 seconds for acknowledgment
         )
-        
+
         # Subscribe to the stream with the consumer configuration
         await self.js.subscribe(
             "metric_agent",
@@ -498,9 +513,9 @@ class MetricAgent:
             queue="metric_processors",
             config=consumer_config
         )
-        
+
         logger.info("[MetricAgent] Subscribed to metric_agent stream")
-        
+
         # Keep the connection alive
         while True:
             await asyncio.sleep(3600)  # Sleep for an hour, or until interrupted

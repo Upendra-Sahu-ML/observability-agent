@@ -1,0 +1,623 @@
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const axios = require('axios');
+// NATS client
+const { connect, StringCodec } = require('nats');
+// Import alert functions
+const { getHistoricalAlerts, getActiveAlerts } = require('./alerts');
+// Import knowledge base functions
+const { getIncidents, getPostmortems } = require('./knowledge');
+
+// Configuration
+const NATS_URL = process.env.NATS_URL || 'nats://nats:4222';
+const NATS_DOMAIN = process.env.NATS_DOMAIN || 'observability-agent';
+const sc = StringCodec(); // For encoding/decoding NATS messages
+
+// Default data for when NATS is not available
+const defaultAgents = require('./mock-data/agents');
+const defaultMetrics = require('./mock-data/metrics');
+const defaultLogs = require('./mock-data/logs');
+const defaultDeployments = require('./mock-data/deployments');
+const defaultRootCauses = require('./mock-data/rootcauses');
+const defaultTraces = require('./mock-data/traces');
+const defaultNotifications = require('./mock-data/notifications');
+const defaultPostmortems = require('./mock-data/postmortems');
+const defaultRunbooks = require('./mock-data/runbooks');
+
+// Cache for data
+const cache = {
+  agents: null,
+  metrics: null,
+  logs: null,
+  deployments: null,
+  rootcauses: null,
+  traces: null,
+  notifications: null,
+  postmortems: null,
+  runbooks: null,
+  'alerts/history': null,
+  'alerts/active': null,
+  'knowledge/incidents': null,
+  'knowledge/postmortems': null
+};
+
+// Cache TTL in milliseconds (5 minutes)
+const CACHE_TTL = 5 * 60 * 1000;
+const cacheTimestamps = {};
+
+// Function to get data from NATS or fallback to default data
+async function getData(type, js, nc, req) {
+  // Check cache first
+  if (cache[type] && cacheTimestamps[type] && (Date.now() - cacheTimestamps[type] < CACHE_TTL)) {
+    console.log(`Returning cached ${type} data`);
+    return cache[type];
+  }
+
+  // Extract query parameters
+  const { service } = req.query;
+
+  try {
+    let data;
+
+    switch (type) {
+      case 'agents':
+        data = await getAgentData(js, nc);
+        break;
+      case 'metrics':
+        data = await getMetricData(js, nc, service);
+        break;
+      case 'logs':
+        data = await getLogData(js, nc, service);
+        break;
+      case 'deployment':
+        data = await getDeploymentData(js, nc);
+        break;
+      case 'rootcause':
+        data = await getRootCauseData(js, nc);
+        break;
+      case 'tracing':
+        data = await getTracingData(js, nc);
+        break;
+      case 'notification':
+        data = await getNotificationData(js, nc);
+        break;
+      case 'postmortem':
+        data = await getPostmortemData(js, nc);
+        break;
+      case 'runbook':
+        data = await getRunbookData(js, nc);
+        break;
+      case 'alerts/history':
+        data = await getHistoricalAlerts(js, nc);
+        break;
+      case 'alerts/active':
+        data = await getActiveAlerts(js, nc);
+        break;
+      case 'knowledge/incidents':
+        data = await getIncidents(js, nc);
+        break;
+      case 'knowledge/postmortems':
+        data = await getPostmortems(js, nc);
+        break;
+      default:
+        throw new Error(`Unknown data type: ${type}`);
+    }
+
+    // Update cache
+    cache[type] = data;
+    cacheTimestamps[type] = Date.now();
+
+    return data;
+  } catch (error) {
+    console.error(`Error fetching ${type} data:`, error);
+    throw error;
+  }
+}
+
+// Function to execute a runbook
+async function executeRunbook(js, nc, runbookId, params = {}) {
+  if (!js || !nc) {
+    throw new Error('NATS connection not available');
+  }
+
+  const executionId = `exec-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  
+  const executionRequest = {
+    id: executionId,
+    runbook_id: runbookId,
+    params: params,
+    timestamp: new Date().toISOString(),
+    status: 'pending'
+  };
+
+  // Try to send execution request to runbook agent via JetStream
+  try {
+    // Use our wrapper to publish
+    await js.publish('runbook.execute', sc.encode(JSON.stringify(executionRequest)));
+    console.log(`Published runbook execution request to runbook.execute: ${executionId}`);
+  } catch (pubErr) {
+    console.warn(`Error publishing with JetStream: ${pubErr.message}. Trying regular NATS publish.`);
+
+    // Fallback to regular NATS publish
+    if (typeof nc.publish === 'function') {
+      nc.publish('runbook.execute', sc.encode(JSON.stringify(executionRequest)));
+      console.log(`Published runbook execution request using regular NATS: ${executionId}`);
+    } else {
+      throw new Error('Failed to publish runbook execution request. Neither JetStream nor regular NATS publish is working.');
+    }
+  }
+
+  return {
+    execution_id: executionId,
+    status: 'pending',
+    message: 'Runbook execution request sent'
+  };
+}
+
+// Function to sync runbooks from external source
+async function syncRunbooks(js, { source, url, token }) {
+  if (!js) {
+    throw new Error('NATS connection not available');
+  }
+
+  // Validate input
+  if (!source) {
+    throw new Error('Source is required');
+  }
+
+  if (source === 'github' && !url) {
+    throw new Error('GitHub URL is required');
+  }
+
+  const syncRequest = {
+    id: `sync-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+    source,
+    url,
+    token,
+    timestamp: new Date().toISOString()
+  };
+
+  // Ensure RUNBOOKS stream exists
+  try {
+    await js.streams.info('RUNBOOKS').catch(() => {
+      // Create stream if it doesn't exist
+      return js.streams.add({
+        name: 'RUNBOOKS',
+        subjects: ['runbooks.*']
+      });
+    });
+
+    // Ensure consumer exists
+    await js.consumers.info('RUNBOOKS', 'runbook-viewer').catch(() => {
+      // Create consumer if it doesn't exist
+      return js.consumers.add('RUNBOOKS', {
+        durable_name: 'runbook-viewer',
+        ack_policy: 'explicit',
+        deliver_policy: 'all'
+      });
+    });
+  } catch (err) {
+    console.error('Error setting up RUNBOOKS stream:', err);
+    throw new Error('Failed to set up RUNBOOKS stream');
+  }
+
+  // Publish sync request
+  try {
+    await js.publish('runbooks.sync', sc.encode(JSON.stringify(syncRequest)));
+    console.log(`Published runbook sync request: ${syncRequest.id}`);
+  } catch (err) {
+    console.error('Error publishing sync request:', err);
+    throw new Error('Failed to publish sync request');
+  }
+
+  return {
+    sync_id: syncRequest.id,
+    status: 'pending',
+    message: 'Runbook sync request sent'
+  };
+}
+
+async function start() {
+  let nc = null;
+  let js = null;
+
+  // Set up Express app
+  const app = express();
+  app.use(cors());
+  app.use(bodyParser.json());
+
+  try {
+    // Try to connect to NATS
+    console.log(`Attempting to connect to NATS at ${NATS_URL}...`);
+
+    // Add more detailed logging
+    console.log('NATS connection options:', {
+      servers: NATS_URL,
+      timeout: 5000,
+      debug: process.env.DEBUG === 'true',
+      jetstreamDomain: NATS_DOMAIN
+    });
+
+    nc = await connect({
+      servers: NATS_URL,
+      timeout: 5000,
+      debug: process.env.DEBUG === 'true',
+      jetstreamDomain: NATS_DOMAIN // Add JetStream domain to connection options
+    }).catch(err => {
+      console.warn(`NATS connection failed: ${err.message}. Will use mock data only.`);
+      console.error('NATS connection error details:', err);
+      return null;
+    });
+
+    if (nc) {
+      console.log('Connected to NATS');
+      console.log('NATS connection state:', nc.info);
+
+      // Initialize JetStream
+      try {
+        if (typeof nc.jetstream === 'function') {
+          js = nc.jetstream();
+          console.log('JetStream initialized');
+
+          // Try to detect JetStream API version
+          if (js) {
+            // Create a wrapper around the JetStream object to handle different API versions
+            const jsWrapper = {
+              _js: js,
+              _originalJs: js, // Keep a reference to the original JetStream object
+              _nc: nc, // Keep a reference to the NATS connection
+              _domain: NATS_DOMAIN, // Store the domain
+
+              // Method to get stream info
+              async streamInfo(streamName) {
+                try {
+                  if (typeof this._js.streams === 'object' && typeof this._js.streams.info === 'function') {
+                    console.log('Using newer JetStream API (streams.info)');
+                    return this._js.streams.info(streamName);
+                  } else if (typeof this._js.streamInfo === 'function') {
+                    console.log('Using older JetStream API (streamInfo)');
+                    return this._js.streamInfo(streamName);
+                  } else {
+                    console.warn('JetStream API does not support stream info, returning mock info');
+                    // Return a mock stream info to avoid errors
+                    return {
+                      name: streamName,
+                      subjects: [`${streamName.toLowerCase()}.*`],
+                      config: {
+                        name: streamName,
+                        subjects: [`${streamName.toLowerCase()}.*`],
+                        retention: 'limits',
+                        max_consumers: -1,
+                        max_msgs: -1,
+                        max_bytes: -1,
+                        max_age: 0,
+                        max_msg_size: -1,
+                        storage: 'file',
+                        discard: 'old',
+                        num_replicas: 1
+                      },
+                      created: new Date().toISOString()
+                    };
+                  }
+                } catch (error) {
+                  console.error(`Error in streamInfo for ${streamName}:`, error);
+                  throw error;
+                }
+              },
+
+              // Method to add a stream
+              async addStream(config) {
+                try {
+                  if (typeof this._js.streams === 'object' && typeof this._js.streams.add === 'function') {
+                    console.log('Using newer JetStream API (streams.add)');
+                    return this._js.streams.add(config);
+                  } else if (typeof this._js.addStream === 'function') {
+                    console.log('Using older JetStream API (addStream)');
+                    return this._js.addStream(config);
+                  } else {
+                    console.warn('JetStream API does not support adding streams, using fallback');
+                    // Return a mock stream info to avoid errors
+                    return {
+                      name: config.name,
+                      subjects: config.subjects,
+                      config: {
+                        ...config,
+                        retention: 'limits',
+                        max_consumers: -1,
+                        max_msgs: -1,
+                        max_bytes: -1,
+                        max_age: 0,
+                        max_msg_size: -1,
+                        storage: 'file',
+                        discard: 'old',
+                        num_replicas: 1
+                      },
+                      created: new Date().toISOString()
+                    };
+                  }
+                } catch (error) {
+                  console.error(`Error in addStream for ${config.name}:`, error);
+                  // Return a mock stream info to avoid errors
+                  return {
+                    name: config.name,
+                    subjects: config.subjects,
+                    config: {
+                      ...config,
+                      retention: 'limits',
+                      max_consumers: -1,
+                      max_msgs: -1,
+                      max_bytes: -1,
+                      max_age: 0,
+                      max_msg_size: -1,
+                      storage: 'file',
+                      discard: 'old',
+                      num_replicas: 1
+                    },
+                    created: new Date().toISOString()
+                  };
+                }
+              },
+
+              // Method to get a consumer
+              async getConsumer(streamName, consumerName) {
+                try {
+                  if (typeof this._js.consumers === 'object' && typeof this._js.consumers.get === 'function') {
+                    console.log('Using newer JetStream API (consumers.get)');
+                    return this._js.consumers.get(streamName, consumerName);
+                  } else if (typeof this._js.consumer === 'function') {
+                    console.log('Using older JetStream API (consumer)');
+                    // @ts-ignore - Support for older JetStream API versions
+                    return this._js.consumer(streamName, { durable_name: consumerName });
+                  } else if (typeof this._js.consumers === 'function') {
+                    console.log('Using alternative JetStream API (consumers)');
+                    return this._js.consumers(streamName, { durable_name: consumerName });
+                  } else {
+                    console.warn('JetStream API does not support getting consumers, using fallback');
+                    // Return a mock consumer to avoid errors
+                    return {
+                      name: consumerName,
+                      stream_name: streamName,
+                      config: {
+                        durable_name: consumerName,
+                        ack_policy: 'explicit',
+                        deliver_policy: 'all'
+                      },
+                      created: new Date().toISOString(),
+                      // Mock fetch method
+                      fetch: async () => {
+                        console.log('Using mock consumer fetch');
+                        return [];
+                      },
+                      // Mock pull method
+                      pull: async () => {
+                        console.log('Using mock consumer pull');
+                        return [];
+                      }
+                    };
+                  }
+                } catch (error) {
+                  console.error(`Error in getConsumer for ${streamName}/${consumerName}:`, error);
+                  throw error;
+                }
+              },
+
+              // Method to add a consumer
+              async addConsumer(streamName, config) {
+                try {
+                  if (typeof this._js.consumers === 'object' && typeof this._js.consumers.add === 'function') {
+                    console.log('Using newer JetStream API (consumers.add)');
+                    return this._js.consumers.add(streamName, config);
+                  } else if (typeof this._js.addConsumer === 'function') {
+                    console.log('Using older JetStream API (addConsumer)');
+                    // @ts-ignore - Support for older JetStream API versions
+                    return this._js.addConsumer(streamName, config);
+                  } else if (typeof this._js.consumers === 'function') {
+                    console.log('Using alternative JetStream API (consumers)');
+                    // Some versions expect a different format for creating consumers
+                    return this._js.consumers(streamName, config);
+                  } else {
+                    console.warn('JetStream API does not support adding consumers, using fallback');
+                    // Return a mock consumer to avoid errors
+                    return {
+                      name: config.durable_name,
+                      stream_name: streamName,
+                      config: config,
+                      created: new Date().toISOString(),
+                      // Mock fetch method
+                      fetch: async () => {
+                        console.log('Using mock consumer fetch');
+                        return [];
+                      },
+                      // Mock pull method
+                      pull: async () => {
+                        console.log('Using mock consumer pull');
+                        return [];
+                      }
+                    };
+                  }
+                } catch (error) {
+                  console.error(`Error in addConsumer for ${streamName}/${config.durable_name}:`, error);
+                  // Return a mock consumer to avoid errors
+                  return {
+                    name: config.durable_name,
+                    stream_name: streamName,
+                    config: config,
+                    created: new Date().toISOString(),
+                    // Mock fetch method
+                    fetch: async () => {
+                      console.log('Using mock consumer fetch');
+                      return [];
+                    },
+                    // Mock pull method
+                    pull: async () => {
+                      console.log('Using mock consumer pull');
+                      return [];
+                    }
+                  };
+                }
+              },
+
+              // Method to publish a message
+              async publish(subject, data) {
+                try {
+                  if (typeof this._js.publish === 'function') {
+                    console.log('Using JetStream publish');
+                    return this._js.publish(subject, data);
+                  } else if (this._nc && typeof this._nc.publish === 'function') {
+                    console.log('Falling back to regular NATS publish');
+                    return this._nc.publish(subject, data);
+                  } else {
+                    console.warn('No valid publish method found, message not published');
+                    // Return a mock ack to avoid errors
+                    return { seq: 0 };
+                  }
+                } catch (error) {
+                  console.error(`Error in publish to ${subject}:`, error);
+                  // Return a mock ack to avoid errors
+                  return { seq: 0 };
+                }
+              },
+
+              // Add properties to make the wrapper look like the original object
+              get streams() {
+                return this._js.streams;
+              },
+
+              get consumers() {
+                return this._js.consumers;
+              },
+
+              get nc() {
+                return this._nc;
+              }
+            };
+
+            // Replace the original js object with our wrapper
+            js = jsWrapper;
+            console.log('Created JetStream API compatibility wrapper');
+          }
+        } else {
+          console.log('JetStream not available in this NATS client version');
+          js = null;
+        }
+      } catch (jsErr) {
+        console.error(`JetStream initialization error: ${jsErr.message}`);
+        js = null;
+      }
+    } else {
+      console.log('Running in mock data mode (no NATS connection)');
+    }
+  } catch (err) {
+    console.warn(`NATS setup error: ${err.message}. Will use mock data only.`);
+    console.error('NATS setup error details:', err);
+  }
+
+  // Health check endpoint
+  app.get('/health', (_, res) => {
+    res.json({
+      status: 'healthy',
+      nats: nc ? 'connected' : 'disconnected',
+      jetstream: js ? 'available' : 'unavailable',
+      mode: nc ? 'connected' : 'mock',
+      uptime: process.uptime()
+    });
+  });
+
+  // API endpoints
+  const routes = [
+    'agents', 'metrics', 'logs', 'deployment', 'rootcause',
+    'tracing', 'notification', 'postmortem', 'runbook'
+  ];
+
+  routes.forEach(route => {
+    app.get(`/api/${route}`, async (req, res) => {
+      try {
+        const data = await getData(route, js, nc, req);
+        res.json(data);
+      } catch (error) {
+        console.error(`Error handling ${route} request:`, error);
+        res.status(500).json({ error: `Failed to fetch ${route} data` });
+      }
+    });
+  });
+
+  // Alert endpoints
+  app.get('/api/alerts/history', async (req, res) => {
+    try {
+      const data = await getData('alerts/history', js, nc, req);
+      res.json(data);
+    } catch (error) {
+      console.error('Error handling alerts/history request:', error);
+      res.status(500).json({ error: 'Failed to fetch historical alerts' });
+    }
+  });
+
+  app.get('/api/alerts/active', async (req, res) => {
+    try {
+      const data = await getData('alerts/active', js, nc, req);
+      res.json(data);
+    } catch (error) {
+      console.error('Error handling alerts/active request:', error);
+      res.status(500).json({ error: 'Failed to fetch active alerts' });
+    }
+  });
+
+  // Knowledge base endpoints
+  app.get('/api/knowledge/incidents', async (req, res) => {
+    try {
+      const data = await getData('knowledge/incidents', js, nc, req);
+      res.json(data);
+    } catch (error) {
+      console.error('Error handling knowledge/incidents request:', error);
+      res.status(500).json({ error: 'Failed to fetch incidents' });
+    }
+  });
+
+  app.get('/api/knowledge/postmortems', async (req, res) => {
+    try {
+      const data = await getData('knowledge/postmortems', js, nc, req);
+      res.json(data);
+    } catch (error) {
+      console.error('Error handling knowledge/postmortems request:', error);
+      res.status(500).json({ error: 'Failed to fetch postmortems' });
+    }
+  });
+
+  // Execute runbook
+  app.post('/api/runbook/execute/:id', async (req, res) => {
+    try {
+      const result = await executeRunbook(js, nc, req.params.id, req.body);
+      res.json(result);
+    } catch (error) {
+      console.error('Error executing runbook:', error);
+      res.status(500).json({ error: error.message || 'Failed to execute runbook' });
+    }
+  });
+
+  // Sync runbooks from external source
+  app.post('/api/runbook/sync', async (req, res) => {
+    try {
+      const result = await syncRunbooks(js, req.body);
+      res.json(result);
+    } catch (error) {
+      console.error('Error syncing runbooks:', error);
+      res.status(500).json({ error: error.message || 'Failed to sync runbooks' });
+    }
+  });
+
+  // Start the server
+  const port = process.env.PORT || 5000;
+  app.listen(port, () => console.log(`UI backend listening on port ${port}`));
+
+  // Handle graceful shutdown
+  process.on('SIGINT', async () => {
+    console.log('Shutting down...');
+    if (nc) {
+      await nc.close();
+    }
+    process.exit(0);
+  });
+}
+
+start();

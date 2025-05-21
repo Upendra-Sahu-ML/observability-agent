@@ -108,10 +108,10 @@ async function connectToNATS() {
           }
         }
 
-        // Only try to create streams if we have a valid JetStream context
+        // Only try to check streams if we have a valid JetStream context
         if (js) {
-          // Create streams if they don't exist
-          await createStreams();
+          // Check if streams exist
+          await checkStreams();
         }
       } else {
         console.log('JetStream not available in this NATS client version');
@@ -129,10 +129,10 @@ async function connectToNATS() {
   }
 }
 
-async function createStreams() {
+async function checkStreams() {
   try {
     if (!js) {
-      console.warn('JetStream not available, skipping stream creation');
+      console.warn('JetStream not available, skipping stream check');
       return;
     }
 
@@ -142,29 +142,19 @@ async function createStreams() {
       // Try the newer API first
       if (typeof js.streams === 'object' && typeof js.streams.info === 'function') {
         await js.streams.info('NOTEBOOKS');
-        console.log('NOTEBOOKS stream already exists');
+        console.log('NOTEBOOKS stream exists');
       } else if (typeof js.streamInfo === 'function') {
         // Try older API
         await js.streamInfo('NOTEBOOKS');
-        console.log('NOTEBOOKS stream already exists');
+        console.log('NOTEBOOKS stream exists');
       } else {
         throw new Error('Unknown JetStream API');
       }
     } catch (err) {
-      // Stream doesn't exist, create it
-      if (typeof js.streams === 'object' && typeof js.streams.add === 'function') {
-        // Newer API
-        await js.streams.add({ name: 'NOTEBOOKS', subjects: ['notebooks.*'] });
-      } else if (typeof js.addStream === 'function') {
-        // Older API
-        await js.addStream({ name: 'NOTEBOOKS', subjects: ['notebooks.*'] });
-      } else {
-        throw new Error('Unknown JetStream API');
-      }
-      console.log('NOTEBOOKS stream created');
+      console.warn('NOTEBOOKS stream not found - it should be created by the NATS ConfigMap');
     }
   } catch (err) {
-    console.error(`Error creating streams: ${err.message}`);
+    console.error(`Error checking streams: ${err.message}`);
     console.error('JetStream API may be incompatible with this version of NATS client');
   }
 }
@@ -370,15 +360,53 @@ async function naturalLanguageToK8sCommand(text, sessionId = null) {
           systemPrompt += `\n\nLast command executed: ${context.lastCommand}`;
         }
 
-        // Instructions for references to previous results
-        systemPrompt += "\n\nWhen the user refers to 'that pod', 'those pods', 'the pod', etc., use the pod names from the context.";
-        systemPrompt += "\nWhen the user asks for logs or details about a service, use the service name to find the corresponding pods.";
-        systemPrompt += "\nWhen the user doesn't specify a namespace, use the last namespace if available, otherwise search across all namespaces.";
+        systemPrompt += `
+        // Context and Reference Resolution
+        - Interpret "that pod", "those pods", etc., as referring to the most recently mentioned pod(s).
+        - Map services to pods via endpoints or label selectors.
+        - Resolve deployments, jobs, or daemonsets to their associated pods.
+        - Use the last mentioned namespace if none is given.
+
+        // Namespace Defaults
+        - If no namespace is specified, use the last known one.
+        - If unavailable, default to all namespaces (-A).
+        - If multiple namespaces are inferred, ask the user.
+
+        // Logs Handling
+        - If no container is specified in a multi-container pod, ask or try all.
+        - Use: kubectl get pod <pod> -o jsonpath='{.spec.containers[*].name}' to list containers.
+        - Default to last referenced pod + namespace for logs.
+        - Support keyword filters via grep (e.g., errors, timeouts).
+        - Use --tail=100 or -f for "latest" or live logs.
+        - Always specify a pod or resource in kubectl logs.
+        - To get logs from all pods in a namespace:
+          kubectl get pods -n observability -o name | xargs -I{} kubectl logs -n observability --all-containers=true {} | grep error
+        - Apply same logic to logs from jobs or daemonsets.
+
+        // Multiple Pod Handling
+        - If multiple pods match, list them and prefer running/recent ones.
+
+        // Error Handling
+        - If a resource isn't found, ask for clarification.
+        - If command intent is unclear, confirm before running.
+
+        // Command Execution Rules
+        - Only output valid kubectl commands; avoid placeholders unless requesting input.
+        - Use --all-containers=true when needed.
+        - Use JSONPath or Go templates to extract fields.
+        - Maintain syntax and order in piped commands.
+
+        // Examples
+        - "Get logs from that pod" → use last referenced pod and namespace.
+        - "Check that service" → find its pods, check logs for errors.
+        - "Describe it" → describe last referenced resource.
+        - "Get pods" → use last namespace or -A.
+        - "Logs from the job" → resolve job to pods, apply log logic.`;
       }
     }
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "system",

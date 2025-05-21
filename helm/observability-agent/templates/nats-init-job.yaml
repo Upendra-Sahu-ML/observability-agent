@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-nats-init
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nats-init
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: nats-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: nats-init
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.natsInit.image.repository }}:{{ .Values.natsInit.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: NATS_URL
+              value: nats://{{ include "observability-agent.fullname" . }}-nats:4222
+            - name: CONFIG_PATH
+              value: /etc/nats-config/js-streams.json
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          volumeMounts:
+            - name: nats-config-volume
+              mountPath: /etc/nats-config
+            - name: init-script
+              mountPath: /app
+          command:
+            - "python"
+            - "/app/init_nats_streams.py"
+      volumes:
+        - name: nats-config-volume
+          configMap:
+            name: {{ include "observability-agent.fullname" . }}-nats-config
+        - name: init-script
+          configMap:
+            name: {{ include "observability-agent.fullname" . }}-nats-init-script
+            defaultMode: 0755

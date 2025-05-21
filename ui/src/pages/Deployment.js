@@ -94,6 +94,8 @@ export default function Deployment() {
 
   // Get status color
   const getStatusColor = (status) => {
+    if (!status) return 'default';
+
     switch (status.toLowerCase()) {
       case 'deployed':
         return 'success';
@@ -108,6 +110,8 @@ export default function Deployment() {
 
   // Get status icon
   const getStatusIcon = (status) => {
+    if (!status) return null;
+
     switch (status.toLowerCase()) {
       case 'deployed':
         return <SuccessIcon />;
@@ -325,7 +329,16 @@ export default function Deployment() {
                         {formatTimestamp(deployment.timestamp)}
                       </TimelineOppositeContent>
                       <TimelineSeparator>
-                        <TimelineDot color={getStatusColor(deployment.status)}>
+                        <TimelineDot
+                          color={getStatusColor(deployment.status)}
+                          sx={{
+                            p: 1,
+                            '& .MuiSvgIcon-root': {
+                              fontSize: '1rem',
+                              color: 'inherit'
+                            }
+                          }}
+                        >
                           <DeployIcon />
                         </TimelineDot>
                         {index < sortedDeployments.length - 1 && <TimelineConnector />}
