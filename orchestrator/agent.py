@@ -12,6 +12,7 @@ from crewai import Agent, Task, Crew
 from crewai.llm import LLM
 from dotenv import load_dotenv
 from common.config import is_agent_enabled
+from nats.js.api import StreamConfig
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -86,37 +87,63 @@ class OrchestratorAgent:
                 logger.warning(f"Failed to get streams info: {str(e)}")
 
             # Define required streams with their subjects
-            # Note: Using 'runbook.data.*' instead of 'runbook.*' to avoid overlap with RUNBOOK_EXECUTIONS
             stream_definitions = {
                 "ALERTS": ["alerts", "alerts.>"],
-                "AGENT_TASKS": ["metric_agent", "log_agent", "deployment_agent", "tracing_agent",
-                               "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent"],
-                "RESPONSES": ["orchestrator_response"],
-                "ALERT_DATA": ["alert_data_request", "alert_data_response.*"],
-                "ROOT_CAUSE": ["root_cause_analysis", "root_cause_result", "rootcause", "rootcause.*"],
-                "METRICS": ["metrics", "metrics.*"],
-                "LOGS": ["logs", "logs.*"],
-                "DEPLOYMENTS": ["deployments", "deployments.*"],
-                "TRACES": ["traces", "traces.*"],
-                "POSTMORTEMS": ["postmortems", "postmortems.*"],
-                "RUNBOOKS": ["runbooks", "runbooks.*", "runbook", "runbook.data.*"],
-                "RUNBOOK_EXECUTIONS": ["runbook.execute", "runbook.status.*"],
-                "NOTIFICATIONS": ["notification_requests", "notifications", "notifications.*"]
+                "AGENT_TASKS": ["metric_agent", "log_agent", "deployment_agent", "tracing_agent", 
+                      "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent",
+                      "agent.tasks.>"],
+                "RESPONSES": ["orchestrator_response", "responses.>"],
+                "ALERT_DATA": ["alert_data_request", "alert_data_response.*", "alert.data.>"],
+                "ROOT_CAUSE": ["root_cause_analysis", "root_cause_result", "rootcause.>"],
+                "METRICS": ["metrics", "metrics.>"],
+                "LOGS": ["logs", "logs.>"],
+                "DEPLOYMENTS": ["deployments", "deployments.>"],
+                "TRACES": ["traces", "traces.>"],
+                "POSTMORTEMS": ["postmortems", "postmortems.>"],
+                "RUNBOOKS": ["runbooks", "runbook.definition.>"],
+                "RUNBOOK_EXECUTIONS": ["runbook.execute", "runbook.status.>", "runbook.execution.>"],
+                "NOTIFICATIONS": ["notification_requests", "notifications.>"]
             }
-
             # Check and create required streams
             for stream_name, subjects in stream_definitions.items():
                 if stream_name in existing_streams:
                     logger.info(f"{stream_name} stream exists")
+                    
+                    # Update subjects if needed for existing stream
+                    try:
+                        stream_info = await self.js.stream_info(stream_name)
+                        current_subjects = set(stream_info.config.subjects)
+                        expected_subjects = set(subjects)
+                        
+                        # Find missing subjects that need to be added
+                        missing_subjects = expected_subjects - current_subjects
+                        
+                        if missing_subjects:
+                            # Update the stream with all subjects (existing + missing)
+                            all_subjects = list(current_subjects.union(missing_subjects))
+                            await self.js.update_stream(name=stream_name, subjects=all_subjects)
+                            logger.info(f"Updated {stream_name} stream with new subjects: {missing_subjects}")
+                    except Exception as e:
+                        logger.error(f"Failed to update subjects for {stream_name} stream: {str(e)}")
+                        
                 else:
+                    stream_config = StreamConfig(
+                            name=stream_name,
+                            subjects=subjects,
+                            retention="limits",
+                            max_msgs=10000,
+                            max_bytes=1024*1024*100,  # 100MB
+                            max_age=3600*24*7,  # 7 days
+                            storage="file",
+                            discard="old"
+                        )
                     try:
                         # Create the stream using the simpler add_stream method
-                        await self.js.add_stream(name=stream_name, subjects=subjects)
+                        await self.js.add_stream(config=stream_config)
                         logger.info(f"Created {stream_name} stream with subjects: {subjects}")
                     except Exception as e:
                         logger.error(f"Failed to create {stream_name} stream: {str(e)}")
                         # Continue with other streams even if one fails
-
 
         except Exception as e:
             logger.error(f"Failed to check streams: {str(e)}")
@@ -492,11 +519,11 @@ class OrchestratorAgent:
                 logger.info("Creating missing streams...")
                 for stream_name in missing_streams:
                     if stream_name == "ALERTS":
-                        subjects = ["alerts", "alerts.>"]
+                        subjects = ["alerts", "alerts.*", "alerts.>"]
                     elif stream_name == "RESPONSES":
-                        subjects = ["orchestrator_response"]
+                        subjects = ["orchestrator_response", "responses.*", "responses.>"]
                     elif stream_name == "ALERT_DATA":
-                        subjects = ["alert_data_request", "alert_data_response.*"]
+                        subjects = ["alert_data_request", "alert_data_response.*", "alert.data", "alert.data.*", "alert.data.>"]
 
                     try:
                         await self.js.add_stream(name=stream_name, subjects=subjects)

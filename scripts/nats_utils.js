@@ -80,7 +80,7 @@ async function ensureStream(js, streamName, subjects) {
 }
 
 /**
- * Publish data to a NATS subject
+ * Publish data to a NATS subject using JetStream with enhanced error handling
  * @param {Object} js - JetStream client
  * @param {string} subject - Subject to publish to
  * @param {Object} data - Data to publish
@@ -89,17 +89,70 @@ async function ensureStream(js, streamName, subjects) {
 async function publishData(js, subject, data) {
   try {
     const encodedData = sc.encode(JSON.stringify(data));
-
-    // Get the NATS connection from the JetStream object
-    const nc = js.nc || js.conn;
-
-    if (!nc || typeof nc.publish !== 'function') {
-      throw new Error('No valid NATS connection found');
+    
+    // Try to publish using JetStream first with better error details
+    try {
+      // Check if JetStream is available
+      let jsAvailable = false;
+      try {
+        // Basic check to see if js object looks valid
+        jsAvailable = js && (typeof js.publish === 'function' || 
+                            (js.nc && typeof js.nc.publish === 'function') ||
+                            (js.conn && typeof js.conn.publish === 'function'));
+      } catch (e) {
+        console.warn(`Error checking JetStream availability: ${e.message}`);
+      }
+      
+      if (!jsAvailable) {
+        throw new Error('JetStream not available');
+      }
+      
+      // Handle different versions of the NATS.js API
+      if (typeof js.publish === 'function') {
+        // Newer NATS.js client
+        const pubAck = await js.publish(subject, encodedData);
+        console.log(`Published to ${subject} using JetStream (seq: ${pubAck?.seq || 'unknown'})`);
+        return true;
+      } else {
+        throw new Error('No direct js.publish method available');
+      }
+    } catch (jsError) {
+      // Extract more meaningful error information
+      let errorCode = 'unknown';
+      let errorDetails = '';
+      
+      if (jsError.code) {
+        errorCode = jsError.code;
+      } else if (jsError.message && jsError.message.includes(',')) {
+        // Some errors format as "503, Service Unavailable"
+        const parts = jsError.message.split(',');
+        errorCode = parts[0].trim();
+        errorDetails = parts.slice(1).join(',').trim();
+      }
+      
+      console.error(`JetStream publish failed: ${errorCode}${errorDetails ? ', ' + errorDetails : ''}, falling back to regular NATS publish`);
+      
+      // Try to ensure stream exists before falling back - this is a best effort
+      try {
+        const streamName = subject.split('.')[0].toUpperCase();
+        // Use only the wildcard pattern which will cover the specific subject too
+        await ensureStream(js, streamName, [`${subject}.>`]);
+      } catch (streamErr) {
+        console.warn(`Cannot ensure stream exists: ${streamErr.message}`);
+      }
+      
+      // Get the NATS connection from the JetStream object and attempt fallback
+      const nc = js.nc || js.conn;
+      
+      if (!nc || typeof nc.publish !== 'function') {
+        throw new Error('No valid NATS connection found for fallback');
+      }
+      
+      // Use regular NATS publish as fallback
+      nc.publish(subject, encodedData);
+      console.log(`Published to ${subject} using fallback NATS publish`);
+      return true;
     }
-
-    // Use regular NATS publish instead of JetStream
-    nc.publish(subject, encodedData);
-    return true;
   } catch (error) {
     console.error(`Error publishing to ${subject}: ${error.message}`);
     return false;

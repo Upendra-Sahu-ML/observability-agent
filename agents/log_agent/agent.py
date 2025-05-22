@@ -391,7 +391,7 @@ class LogAgent:
             # Ensure the alerts stream exists with proper configuration
             stream_config = {
                 "name": "ALERTS",
-                "subjects": ["alerts.>"],
+                "subjects": ["alerts", "alerts.>"],
                 "retention": "limits",
                 "max_consumers": -1,
                 "max_msgs_per_subject": 10000,

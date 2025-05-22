@@ -12,12 +12,12 @@ RUN npm install --production
 COPY server.js ./
 COPY alerts.js ./
 COPY knowledge.js ./
+COPY constants.js ./
 
 # Set environment variables
 ENV NODE_ENV=production
 ENV PORT=5000
-ENV NATS_URL=nats://nats:4222
-ENV NATS_DOMAIN=observability-agent
+ENV NATS_URL=nats://observability-agent-nats:4222
 
 # Expose the port
 EXPOSE 5000

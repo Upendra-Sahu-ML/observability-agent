@@ -232,7 +232,7 @@ async function main() {
     const { nc, js } = await utils.connectToNATS(config.natsUrl);
     
     // Ensure RUNBOOK_EXECUTIONS stream exists
-    await utils.ensureStream(js, 'RUNBOOK_EXECUTIONS', ['runbook.execute', 'runbook.status.*']);
+    await utils.ensureStream(js, 'RUNBOOK_EXECUTIONS', ['runbook.execute', 'runbook.status', 'runbook.status.*', 'runbook.execution', 'runbook.execution.*', 'runbook.execution.>']);
     
     // Generate and publish runbook executions
     let count = 0;

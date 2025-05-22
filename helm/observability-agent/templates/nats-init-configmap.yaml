@@ -109,7 +109,7 @@ data:
                             max_msgs=stream_def.get('max_msgs', 10000),
                             max_bytes=stream_def.get('max_bytes', 104857600),  # 100MB
                             max_age=stream_def.get('max_age', 604800000000000),  # 7 days in nanoseconds
-                            storage=stream_def.get('storage', 'memory'),
+                            storage=stream_def.get('storage', 'file'),
                             discard=stream_def.get('discard', 'old')
                         )
                         await js.add_stream(config=config)
@@ -135,138 +135,149 @@ data:
                 "max_msgs": 10000,
                 "max_bytes": 104857600,
                 "max_age": 604800000000000,
-                "storage": "memory",
+                "storage": "file",
                 "discard": "old"
             },
             {
                 "name": "AGENT_TASKS",
-                "subjects": ["metric_agent", "log_agent", "deployment_agent", "tracing_agent",
-                            "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent"],
+                "subjects": ["metric_agent", "log_agent", "deployment_agent", "tracing_agent", 
+                            "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent",
+                            "agent.tasks.>"],
                 "retention": "limits",
                 "max_msgs": 10000,
                 "max_bytes": 104857600,
                 "max_age": 604800000000000,
-                "storage": "memory",
+                "storage": "file",
                 "discard": "old"
             },
             {
-                "name": "RESPONSES",
-                "subjects": ["orchestrator_response"],
+                "name": "AGENTS",
+                "subjects": ["agent.status.>"],
                 "retention": "limits",
                 "max_msgs": 10000,
                 "max_bytes": 104857600,
                 "max_age": 604800000000000,
-                "storage": "memory",
+                "storage": "file",
+            "discard": "old"
+            },
+            {
+                "name": "RESPONSES",
+                "subjects": ["orchestrator_response", "responses.>"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "file",
                 "discard": "old"
             },
             {
                 "name": "ALERT_DATA",
-                "subjects": ["alert_data_request", "alert_data_response.*"],
+                "subjects": ["alert_data_request", "alert_data_response.*", "alert.data.>"],
                 "retention": "limits",
                 "max_msgs": 10000,
                 "max_bytes": 104857600,
                 "max_age": 604800000000000,
-                "storage": "memory",
+                "storage": "file",
                 "discard": "old"
             },
             {
                 "name": "ROOT_CAUSE",
-                "subjects": ["root_cause_analysis", "root_cause_result", "rootcause", "rootcause.*"],
+                "subjects": ["root_cause_analysis", "root_cause_result", "rootcause.>"],
                 "retention": "limits",
                 "max_msgs": 10000,
                 "max_bytes": 104857600,
                 "max_age": 604800000000000,
-                "storage": "memory",
-                "discard": "old"
-            },
-            {
-                "name": "METRICS",
-                "subjects": ["metrics", "metrics.*"],
-                "retention": "limits",
-                "max_msgs": 10000,
-                "max_bytes": 104857600,
-                "max_age": 604800000000000,
-                "storage": "memory",
-                "discard": "old"
-            },
-            {
-                "name": "LOGS",
-                "subjects": ["logs", "logs.*"],
-                "retention": "limits",
-                "max_msgs": 10000,
-                "max_bytes": 104857600,
-                "max_age": 604800000000000,
-                "storage": "memory",
-                "discard": "old"
-            },
-            {
-                "name": "DEPLOYMENTS",
-                "subjects": ["deployments", "deployments.*"],
-                "retention": "limits",
-                "max_msgs": 10000,
-                "max_bytes": 104857600,
-                "max_age": 604800000000000,
-                "storage": "memory",
-                "discard": "old"
-            },
-            {
-                "name": "TRACES",
-                "subjects": ["traces", "traces.*"],
-                "retention": "limits",
-                "max_msgs": 10000,
-                "max_bytes": 104857600,
-                "max_age": 604800000000000,
-                "storage": "memory",
-                "discard": "old"
-            },
-            {
-                "name": "POSTMORTEMS",
-                "subjects": ["postmortems", "postmortems.*"],
-                "retention": "limits",
-                "max_msgs": 10000,
-                "max_bytes": 104857600,
-                "max_age": 604800000000000,
-                "storage": "memory",
-                "discard": "old"
-            },
-            {
-                "name": "RUNBOOKS",
-                "subjects": ["runbooks", "runbooks.*", "runbook", "runbook.data.*"],
-                "retention": "limits",
-                "max_msgs": 10000,
-                "max_bytes": 104857600,
-                "max_age": 604800000000000,
-                "storage": "memory",
-                "discard": "old"
-            },
-            {
-                "name": "RUNBOOK_EXECUTIONS",
-                "subjects": ["runbook.execute", "runbook.status.*"],
-                "retention": "limits",
-                "max_msgs": 10000,
-                "max_bytes": 104857600,
-                "max_age": 604800000000000,
-                "storage": "memory",
-                "discard": "old"
-            },
-            {
-                "name": "NOTEBOOKS",
-                "subjects": ["notebooks", "notebooks.*"],
-                "retention": "limits",
-                "max_msgs": 10000,
-                "max_bytes": 104857600,
-                "max_age": 604800000000000,
-                "storage": "memory",
+                "storage": "file",
                 "discard": "old"
             },
             {
                 "name": "NOTIFICATIONS",
-                "subjects": ["notification_requests", "notifications", "notifications.*"],
+                "subjects": ["notification_requests", "notifications."],
                 "retention": "limits",
                 "max_msgs": 10000,
                 "max_bytes": 104857600,
                 "max_age": 604800000000000,
-                "storage": "memory",
+                "storage": "file",
+                "discard": "old"
+            },
+            {
+            "name": "METRICS",
+            "subjects": ["metrics", "metrics.>"],
+            "retention": "limits",
+            "max_msgs": 10000,
+            "max_bytes": 104857600,
+            "max_age": 604800000000000,
+            "storage": "file",
+            "discard": "old"
+            },
+            {
+                "name": "LOGS",
+                "subjects": ['logs", "logs.>"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "file",
+                "discard": "old"
+            },
+            {
+                "name": "DEPLOYMENTS",
+                "subjects": ["deployments", "deployments.>"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "file",
+                "discard": "old"
+            },
+            {
+                "name": "TRACES",
+                "subjects": ["traces", "traces.>"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "file",
+                "discard": "old"
+            },
+            {
+            "name": "POSTMORTEMS",
+            "subjects": ["postmortems", "postmortems.>"],
+            "retention": "limits",
+            "max_msgs": 10000,
+            "max_bytes": 104857600,
+            "max_age": 604800000000000,
+            "storage": "file",
+            "discard": "old"
+            },
+            {
+                "name": "RUNBOOKS",
+                "subjects": ["runbooks", "runbook.definition.>"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "file",
+                "discard": "old"
+            },
+            {
+                "name": "RUNBOOK_EXECUTIONS",
+                "subjects": ["runbook.execute", "runbook.status.>", "runbook.execution.>"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "file",
+                "discard": "old"
+            },
+            {
+                "name": "NOTEBOOKS",
+                "subjects": ["notebooks", "notebooks.>"],
+                "retention": "limits",
+                "max_msgs": 10000,
+                "max_bytes": 104857600,
+                "max_age": 604800000000000,
+                "storage": "file",
                 "discard": "old"
             }
         ]

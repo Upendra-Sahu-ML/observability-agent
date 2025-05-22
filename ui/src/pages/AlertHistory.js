@@ -119,19 +119,29 @@ export default function AlertHistory() {
   };
 
   // Filter alerts based on search term
-  const filteredHistoricalAlerts = alerts.filter(alert => 
-    alert.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    alert.labels.alertname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (alert.labels.service && alert.labels.service.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (alert.labels.severity && alert.labels.severity.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredHistoricalAlerts = alerts.filter(alert => {
+    // Safely check for existence of nested properties before access
+    const alertname = alert.labels?.alertname || '';
+    const service = alert.labels?.service || '';
+    const severity = alert.labels?.severity || '';
+    
+    return alert.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alertname.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      service.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      severity.toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
-  const filteredActiveAlerts = activeAlerts.filter(alert => 
-    alert.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    alert.labels.alertname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (alert.labels.service && alert.labels.service.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (alert.labels.severity && alert.labels.severity.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredActiveAlerts = activeAlerts.filter(alert => {
+    // Safely check for existence of nested properties before access
+    const alertname = alert.labels?.alertname || '';
+    const service = alert.labels?.service || '';
+    const severity = alert.labels?.severity || '';
+    
+    return alert.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alertname.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      service.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      severity.toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
   // Get severity color
   const getSeverityColor = (severity) => {
@@ -179,15 +189,15 @@ export default function AlertHistory() {
               <Typography variant="body2" gutterBottom>{selectedAlert.id}</Typography>
               
               <Typography variant="subtitle2">Alert Name</Typography>
-              <Typography variant="body2" gutterBottom>{selectedAlert.labels.alertname}</Typography>
+              <Typography variant="body2" gutterBottom>{selectedAlert.labels?.alertname || 'Unknown Alert'}</Typography>
               
               <Typography variant="subtitle2">Service</Typography>
-              <Typography variant="body2" gutterBottom>{selectedAlert.labels.service || 'N/A'}</Typography>
+              <Typography variant="body2" gutterBottom>{selectedAlert.labels?.service || 'N/A'}</Typography>
               
               <Typography variant="subtitle2">Severity</Typography>
               <Chip 
-                label={selectedAlert.labels.severity || 'Unknown'} 
-                color={getSeverityColor(selectedAlert.labels.severity)}
+                label={selectedAlert.labels?.severity || 'Unknown'} 
+                color={getSeverityColor(selectedAlert.labels?.severity)}
                 size="small"
               />
             </Grid>
@@ -201,7 +211,7 @@ export default function AlertHistory() {
               
               <Typography variant="subtitle2" sx={{ mt: 1 }}>Start Time</Typography>
               <Typography variant="body2" gutterBottom>
-                {new Date(selectedAlert.startsAt).toLocaleString()}
+                {new Date(selectedAlert.startsAt || Date.now()).toLocaleString()}
               </Typography>
               
               {selectedAlert.endsAt && (
@@ -313,12 +323,12 @@ export default function AlertHistory() {
                       .map((alert) => (
                         <TableRow key={alert.id} hover>
                           <TableCell>{alert.id}</TableCell>
-                          <TableCell>{alert.labels.alertname}</TableCell>
-                          <TableCell>{alert.labels.service || 'N/A'}</TableCell>
+                          <TableCell>{alert.labels?.alertname || 'Unknown Alert'}</TableCell>
+                          <TableCell>{alert.labels?.service || 'N/A'}</TableCell>
                           <TableCell>
                             <Chip 
-                              label={alert.labels.severity || 'Unknown'} 
-                              color={getSeverityColor(alert.labels.severity)}
+                              label={alert.labels?.severity || 'Unknown'} 
+                              color={getSeverityColor(alert.labels?.severity)}
                               size="small"
                             />
                           </TableCell>
@@ -329,7 +339,7 @@ export default function AlertHistory() {
                               size="small"
                             />
                           </TableCell>
-                          <TableCell>{new Date(alert.startsAt).toLocaleString()}</TableCell>
+                          <TableCell>{new Date(alert.startsAt || Date.now()).toLocaleString()}</TableCell>
                           <TableCell>
                             <Tooltip title="View Details">
                               <IconButton size="small" onClick={() => handleAlertSelect(alert)}>
@@ -378,12 +388,12 @@ export default function AlertHistory() {
                       .map((alert) => (
                         <TableRow key={alert.id} hover>
                           <TableCell>{alert.id}</TableCell>
-                          <TableCell>{alert.labels.alertname}</TableCell>
-                          <TableCell>{alert.labels.service || 'N/A'}</TableCell>
+                          <TableCell>{alert.labels?.alertname || 'Unknown Alert'}</TableCell>
+                          <TableCell>{alert.labels?.service || 'N/A'}</TableCell>
                           <TableCell>
                             <Chip 
-                              label={alert.labels.severity || 'Unknown'} 
-                              color={getSeverityColor(alert.labels.severity)}
+                              label={alert.labels?.severity || 'Unknown'} 
+                              color={getSeverityColor(alert.labels?.severity)}
                               size="small"
                             />
                           </TableCell>
@@ -394,7 +404,7 @@ export default function AlertHistory() {
                               size="small"
                             />
                           </TableCell>
-                          <TableCell>{new Date(alert.startsAt).toLocaleString()}</TableCell>
+                          <TableCell>{new Date(alert.startsAt || Date.now()).toLocaleString()}</TableCell>
                           <TableCell>
                             {alert.endsAt ? new Date(alert.endsAt).toLocaleString() : 'N/A'}
                           </TableCell>

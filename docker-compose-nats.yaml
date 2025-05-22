@@ -6,7 +6,7 @@ services:
     ports:
       - "4222:4222"  # Client connections
       - "8222:8222"  # HTTP monitoring
-    command: "--jetstream --js_domain observability-agent"
+    command: "--jetstream --js_domain observability-agent --store_dir=/data --js_mem_storage=8G --js_file_storage=10G"
     volumes:
       - nats-data:/data
     environment:

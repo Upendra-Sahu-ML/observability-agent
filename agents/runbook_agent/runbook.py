@@ -186,7 +186,7 @@ class RunbookAgent:
                             max_msgs=10000,
                             max_bytes=1024*1024*100,  # 100MB
                             max_age=3600*24*7,  # 7 days
-                            storage="memory",
+                            storage="file",
                             discard="old"
                         )
 

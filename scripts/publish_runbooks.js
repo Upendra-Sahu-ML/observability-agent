@@ -238,7 +238,7 @@ async function main() {
     const { nc, js } = await utils.connectToNATS(config.natsUrl);
 
     // Ensure RUNBOOKS stream exists
-    await utils.ensureStream(js, 'RUNBOOKS', ['runbooks', 'runbooks.*', 'runbook', 'runbook.data.*']);
+    await utils.ensureStream(js, 'RUNBOOKS', ['runbooks', 'runbook.definition', 'runbook.definition.>']);
 
     // Generate and publish runbooks
     let count = 0;
@@ -251,8 +251,8 @@ async function main() {
       }
 
       const runbook = generateRunbook();
-      // Use runbook.data.* instead of runbook.* to avoid overlap with RUNBOOK_EXECUTIONS
-      const subject = `runbook.data.${runbook.service.replace(/-/g, '_')}`;
+      // Use runbook.definition.* to follow the consistent subject pattern
+      const subject = `runbook.definition.${runbook.service.replace(/-/g, '_')}`;
 
       const success = await utils.publishData(js, subject, runbook);
 
