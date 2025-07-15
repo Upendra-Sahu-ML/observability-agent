@@ -25,7 +25,8 @@ import {
   IconButton,
   Tooltip,
   TextField,
-  InputAdornment
+  InputAdornment,
+  Button
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -33,8 +34,11 @@ import {
   TrendingUp as TrendingUpIcon,
   Memory as MemoryIcon,
   Speed as SpeedIcon,
-  Error as ErrorIcon
+  Error as ErrorIcon,
+  Clear as ClearIcon,
+  ListAlt as LogsIcon
 } from '@mui/icons-material';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -60,19 +64,31 @@ ChartJS.register(
 );
 
 export default function Metrics() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const queryParams = new URLSearchParams(location.search);
+  const alertIdParam = queryParams.get('alertId');
+
   const [metrics, setMetrics] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [serviceFilter, setServiceFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [alertId, setAlertId] = useState(alertIdParam || '');
 
   // Fetch metrics data
   const fetchMetrics = async () => {
     setLoading(true);
     try {
-      const response = await api.get('/metrics', {
-        params: serviceFilter ? { service: serviceFilter } : {}
-      });
+      // Build query parameters
+      const params = {};
+      if (serviceFilter) params.service = serviceFilter;
+      if (alertId) params.alertId = alertId;
+
+      // Use the specific endpoint if alertId is provided
+      const endpoint = alertId ? `/alerts/${alertId}/metrics` : '/metrics';
+
+      const response = await api.get(endpoint, { params });
       setMetrics(response.data);
       setError(null);
     } catch (err) {
@@ -83,9 +99,15 @@ export default function Metrics() {
     }
   };
 
+  // Clear alert ID filter
+  const clearAlertFilter = () => {
+    setAlertId('');
+    navigate('/metrics', { replace: true });
+  };
+
   useEffect(() => {
     fetchMetrics();
-  }, [serviceFilter]);
+  }, [serviceFilter, alertId]);
 
   // Handle service filter change
   const handleServiceFilterChange = (event) => {
@@ -177,6 +199,15 @@ export default function Metrics() {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">
           System Metrics
+          {alertId && (
+            <Chip
+              label={`Alert: ${alertId}`}
+              color="primary"
+              onDelete={clearAlertFilter}
+              deleteIcon={<ClearIcon />}
+              sx={{ ml: 2 }}
+            />
+          )}
         </Typography>
         <Tooltip title="Refresh metrics">
           <IconButton onClick={fetchMetrics} disabled={loading}>
@@ -248,6 +279,8 @@ export default function Metrics() {
                               <TableCell>Metric</TableCell>
                               <TableCell>Value</TableCell>
                               <TableCell>Timestamp</TableCell>
+                              {!alertId && <TableCell>Alert ID</TableCell>}
+                              <TableCell>Actions</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -271,6 +304,33 @@ export default function Metrics() {
                                   />
                                 </TableCell>
                                 <TableCell>{formatTimestamp(metric.timestamp)}</TableCell>
+                                {!alertId && (
+                                  <TableCell>
+                                    {metric.alert_id ? (
+                                      <Chip
+                                        label={metric.alert_id}
+                                        color="primary"
+                                        size="small"
+                                        onClick={() => navigate(`/metrics?alertId=${metric.alert_id}`)}
+                                        clickable
+                                      />
+                                    ) : (
+                                      <Typography variant="body2" color="textSecondary">-</Typography>
+                                    )}
+                                  </TableCell>
+                                )}
+                                <TableCell>
+                                  {metric.alert_id && (
+                                    <Tooltip title="View Logs">
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => navigate(`/logs?alertId=${metric.alert_id}`)}
+                                      >
+                                        <LogsIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
+                                </TableCell>
                               </TableRow>
                             ))}
                           </TableBody>

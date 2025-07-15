@@ -140,9 +140,8 @@ data:
             },
             {
                 "name": "AGENT_TASKS",
-                "subjects": ["metric_agent", "log_agent", "deployment_agent", "tracing_agent", 
-                            "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent",
-                            "agent.tasks.>"],
+                "subjects": ["observability_agent", "infrastructure_agent", "communication_agent",
+                            "root_cause_agent", "agent.tasks.>"],
                 "retention": "limits",
                 "max_msgs": 10000,
                 "max_bytes": 104857600,
@@ -212,7 +211,7 @@ data:
             },
             {
                 "name": "LOGS",
-                "subjects": ['logs", "logs.>"],
+                "subjects": ["logs", "logs.>"],
                 "retention": "limits",
                 "max_msgs": 10000,
                 "max_bytes": 104857600,
@@ -252,7 +251,7 @@ data:
             },
             {
                 "name": "RUNBOOKS",
-                "subjects": ["runbooks", "runbook.definition.>"],
+                "subjects": ["runbooks", "runbooks.>", "runbook.definition.>"],
                 "retention": "limits",
                 "max_msgs": 10000,
                 "max_bytes": 104857600,

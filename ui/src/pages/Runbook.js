@@ -35,7 +35,7 @@ export default function Runbook() {
 
   useEffect(() => {
     // Fetch runbooks from the API
-    api.get('/runbook')
+    api.get('/api/runbook')
       .then(res => {
         console.log('Runbooks data:', res.data);
         setRunbooks(res.data);
@@ -60,7 +60,7 @@ export default function Runbook() {
       }));
 
       // Call the API to execute the runbook
-      const response = await api.post(`/runbook/execute`, { runbookId });
+      const response = await api.post(`/api/runbook/execute`, { runbookId });
 
       // Update execution status with the execution ID
       const executionId = response.data.executionId;
@@ -89,7 +89,7 @@ export default function Runbook() {
   const pollExecutionStatus = (runbookId, executionId) => {
     const statusInterval = setInterval(async () => {
       try {
-        const statusResponse = await api.get(`/runbook/status/${executionId}`);
+        const statusResponse = await api.get(`/api/runbook/execution/${executionId}`);
         const status = statusResponse.data;
 
         setExecutionStatus(prev => ({

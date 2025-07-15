@@ -1,0 +1,14 @@
+# Python requirements for observability agent scripts
+# Install with: pip install -r requirements.txt
+
+# NATS Python client
+nats-py>=2.6.0
+
+# For JSON handling and async operations (built-in, but listed for clarity)
+# asyncio - built-in
+# json - built-in
+# logging - built-in
+
+# Optional: For enhanced CLI experience
+rich>=13.0.0
+click>=8.0.0

@@ -12,6 +12,7 @@ from crewai import Agent, Task, Crew
 from crewai.llm import LLM
 from dotenv import load_dotenv
 from common.config import is_agent_enabled
+from common.stream_config import get_all_stream_configs
 from nats.js.api import StreamConfig
 
 # Configure logging
@@ -86,38 +87,23 @@ class OrchestratorAgent:
             except Exception as e:
                 logger.warning(f"Failed to get streams info: {str(e)}")
 
-            # Define required streams with their subjects
-            stream_definitions = {
-                "ALERTS": ["alerts", "alerts.>"],
-                "AGENT_TASKS": ["metric_agent", "log_agent", "deployment_agent", "tracing_agent", 
-                      "root_cause_agent", "notification_agent", "postmortem_agent", "runbook_agent",
-                      "agent.tasks.>"],
-                "RESPONSES": ["orchestrator_response", "responses.>"],
-                "ALERT_DATA": ["alert_data_request", "alert_data_response.*", "alert.data.>"],
-                "ROOT_CAUSE": ["root_cause_analysis", "root_cause_result", "rootcause.>"],
-                "METRICS": ["metrics", "metrics.>"],
-                "LOGS": ["logs", "logs.>"],
-                "DEPLOYMENTS": ["deployments", "deployments.>"],
-                "TRACES": ["traces", "traces.>"],
-                "POSTMORTEMS": ["postmortems", "postmortems.>"],
-                "RUNBOOKS": ["runbooks", "runbook.definition.>"],
-                "RUNBOOK_EXECUTIONS": ["runbook.execute", "runbook.status.>", "runbook.execution.>"],
-                "NOTIFICATIONS": ["notification_requests", "notifications.>"]
-            }
+            # Get stream definitions from centralized config
+            stream_configs = get_all_stream_configs()
+            stream_definitions = {name: config["subjects"] for name, config in stream_configs.items()}
             # Check and create required streams
             for stream_name, subjects in stream_definitions.items():
                 if stream_name in existing_streams:
                     logger.info(f"{stream_name} stream exists")
-                    
+
                     # Update subjects if needed for existing stream
                     try:
                         stream_info = await self.js.stream_info(stream_name)
                         current_subjects = set(stream_info.config.subjects)
                         expected_subjects = set(subjects)
-                        
+
                         # Find missing subjects that need to be added
                         missing_subjects = expected_subjects - current_subjects
-                        
+
                         if missing_subjects:
                             # Update the stream with all subjects (existing + missing)
                             all_subjects = list(current_subjects.union(missing_subjects))
@@ -125,7 +111,7 @@ class OrchestratorAgent:
                             logger.info(f"Updated {stream_name} stream with new subjects: {missing_subjects}")
                     except Exception as e:
                         logger.error(f"Failed to update subjects for {stream_name} stream: {str(e)}")
-                        
+
                 else:
                     stream_config = StreamConfig(
                             name=stream_name,
@@ -160,14 +146,45 @@ class OrchestratorAgent:
         self.agent_responses[alert_id][agent_type] = response_data
 
         # Check if we have responses from all expected agents
-        expected_agents = ['metric', 'log', 'deployment', 'tracing', 'notification', 'postmortem']
+        # Using simplified agent architecture (4 consolidated agents instead of 10+)
+        # Simplified agent architecture: 4 consolidated agents instead of 10+
+        expected_agents = []
+        
+        # Core 4 consolidated agents (check for new agent names first, fallback to legacy)
+        if is_agent_enabled('observability'):
+            expected_agents.append('observability')
+        
+        if is_agent_enabled('infrastructure'):
+            expected_agents.append('infrastructure')
+        
+        if is_agent_enabled('communication'):
+            expected_agents.append('communication')
+        
+        if is_agent_enabled('root_cause'):
+            expected_agents.append('root_cause')
+        
+        # Fallback to legacy agent names for backwards compatibility
+        if not expected_agents:
+            # If no consolidated agents are enabled, use legacy agents
+            legacy_agents = ['metric', 'log', 'tracing', 'deployment', 'runbook', 'notification', 'postmortem']
+            expected_agents = [agent for agent in legacy_agents if is_agent_enabled(agent)]
+        
         available_agents = [agent for agent in expected_agents if is_agent_enabled(agent)]
 
-        if all(agent in self.agent_responses[alert_id] for agent in available_agents if agent != 'notification' and agent != 'postmortem'):
+        # For simplified architecture, wait for observability and infrastructure analysis
+        # Communication is only needed for notifications after analysis
+        analysis_agents = [agent for agent in available_agents if agent in ['observability', 'infrastructure', 'root_cause'] or agent in ['metric', 'log', 'tracing', 'deployment', 'runbook']]
+        
+        if all(agent in self.agent_responses[alert_id] for agent in analysis_agents):
             # Create comprehensive data package for root cause analysis
+            # Updated for simplified agent architecture
             comprehensive_data = {
                 'alert_id': alert_id,
                 'alert': self.agent_responses[alert_id].get('original_alert', {}),
+                'observability_analysis': self.agent_responses[alert_id].get('observability', {}),
+                'infrastructure_analysis': self.agent_responses[alert_id].get('infrastructure', {}),
+                'communication_status': self.agent_responses[alert_id].get('communication', {}),
+                # Legacy support for backwards compatibility
                 'metrics': self.agent_responses[alert_id].get('metric', {}),
                 'logs': self.agent_responses[alert_id].get('log', {}),
                 'tracing': self.agent_responses[alert_id].get('tracing', {}),
@@ -225,7 +242,25 @@ class OrchestratorAgent:
             enriched_alert['priority'] = priority
 
             # Provide context about which agents to involve
-            agents_to_involve = ['metric', 'log', 'deployment', 'tracing', 'notification', 'postmortem']
+            # Determine which agents to involve based on enabled configuration
+            agents_to_involve = []
+            if is_agent_enabled('observability'):
+                agents_to_involve.append('observability')
+            else:
+                agents_to_involve.extend(['metric', 'log', 'tracing'])
+            
+            if is_agent_enabled('infrastructure'):
+                agents_to_involve.append('infrastructure')
+            else:
+                agents_to_involve.extend(['deployment', 'runbook'])
+            
+            if is_agent_enabled('communication'):
+                agents_to_involve.append('communication')
+            else:
+                agents_to_involve.extend(['notification', 'postmortem'])
+            
+            if is_agent_enabled('root_cause'):
+                agents_to_involve.append('root_cause')
 
             # Adjust recommended agents based on alert type
             if 'memory' in alert_name.lower() or 'cpu' in alert_name.lower():
@@ -293,7 +328,9 @@ class OrchestratorAgent:
                     expected_agents = set(['metric', 'log', 'deployment', 'tracing'])
                     expected_agents = {agent for agent in expected_agents if is_agent_enabled(agent)}
 
-                    missing_agents = expected_agents - responding_agents - {'original_alert', 'notification', 'postmortem'}
+                    # Exclude agents that don't contribute to root cause analysis
+                    analysis_agents_set = set(analysis_agents)
+                    missing_agents = analysis_agents_set - responding_agents - {'original_alert'}
                     responded_agents = expected_agents.intersection(responding_agents)
 
                     logger.warning(f"Missing responses from: {missing_agents}")
@@ -353,41 +390,71 @@ class OrchestratorAgent:
             logger.info(f"Processing alert: {alert_id} - {enriched_alert.get('labels', {}).get('alertname', 'unknown')}")
 
             # Distribute the enriched alert to specialized agents (only if they are enabled)
-            if is_agent_enabled('metric'):
-                await self.js.publish("metric_agent", json.dumps(enriched_alert).encode())
-                logger.info(f"Sent alert {alert_id} to metric agent")
+            # Use consolidated observability agent instead of separate metric/log/tracing agents
+            if is_agent_enabled('observability'):
+                await self.js.publish("observability_agent", json.dumps(enriched_alert).encode())
+                logger.info(f"Sent alert {alert_id} to consolidated observability agent")
             else:
-                logger.info(f"Skipping disabled metric agent for alert {alert_id}")
+                logger.info(f"Skipping disabled observability agent for alert {alert_id}")
+                
+                # Fallback to individual agents if observability agent is disabled
+                if is_agent_enabled('metric'):
+                    await self.js.publish("metric_agent", json.dumps(enriched_alert).encode())
+                    logger.info(f"Sent alert {alert_id} to metric agent")
+                else:
+                    logger.info(f"Skipping disabled metric agent for alert {alert_id}")
 
-            if is_agent_enabled('log'):
-                await self.js.publish("log_agent", json.dumps(enriched_alert).encode())
-                logger.info(f"Sent alert {alert_id} to log agent")
-            else:
-                logger.info(f"Skipping disabled log agent for alert {alert_id}")
+                if is_agent_enabled('log'):
+                    await self.js.publish("log_agent", json.dumps(enriched_alert).encode())
+                    logger.info(f"Sent alert {alert_id} to log agent")
+                else:
+                    logger.info(f"Skipping disabled log agent for alert {alert_id}")
 
-            if is_agent_enabled('tracing'):
-                await self.js.publish("tracing_agent", json.dumps(enriched_alert).encode())
-                logger.info(f"Sent alert {alert_id} to tracing agent")
-            else:
-                logger.info(f"Skipping disabled tracing agent for alert {alert_id}")
+                if is_agent_enabled('tracing'):
+                    await self.js.publish("tracing_agent", json.dumps(enriched_alert).encode())
+                    logger.info(f"Sent alert {alert_id} to tracing agent")
+                else:
+                    logger.info(f"Skipping disabled tracing agent for alert {alert_id}")
 
-            if is_agent_enabled('deployment'):
-                await self.js.publish("deployment_agent", json.dumps(enriched_alert).encode())
-                logger.info(f"Sent alert {alert_id} to deployment agent")
+            # Use consolidated infrastructure agent instead of separate deployment/runbook agents
+            if is_agent_enabled('infrastructure'):
+                await self.js.publish("infrastructure_agent", json.dumps(enriched_alert).encode())
+                logger.info(f"Sent alert {alert_id} to consolidated infrastructure agent")
             else:
-                logger.info(f"Skipping disabled deployment agent for alert {alert_id}")
+                logger.info(f"Skipping disabled infrastructure agent for alert {alert_id}")
+                
+                # Fallback to individual agents if infrastructure agent is disabled
+                if is_agent_enabled('deployment'):
+                    await self.js.publish("deployment_agent", json.dumps(enriched_alert).encode())
+                    logger.info(f"Sent alert {alert_id} to deployment agent")
+                else:
+                    logger.info(f"Skipping disabled deployment agent for alert {alert_id}")
 
-            if is_agent_enabled('notification'):
-                await self.js.publish("notification_agent", json.dumps(enriched_alert).encode())
-                logger.info(f"Sent alert {alert_id} to notification agent")
+            if is_agent_enabled('root_cause'):
+                await self.js.publish("root_cause_agent", json.dumps(enriched_alert).encode())
+                logger.info(f"Sent alert {alert_id} to root cause agent")
             else:
-                logger.info(f"Skipping disabled notification agent for alert {alert_id}")
+                logger.info(f"Skipping disabled root cause agent for alert {alert_id}")
 
-            if is_agent_enabled('postmortem'):
-                await self.js.publish("postmortem_agent", json.dumps(enriched_alert).encode())
-                logger.info(f"Sent alert {alert_id} to postmortem agent")
+            # Use consolidated communication agent instead of separate notification/postmortem agents
+            if is_agent_enabled('communication'):
+                # Send notification task to communication agent
+                notification_task = enriched_alert.copy()
+                notification_task['task_type'] = 'notification'
+                await self.js.publish("communication_agent", json.dumps(notification_task).encode())
+                logger.info(f"Sent notification task for alert {alert_id} to consolidated communication agent")
             else:
-                logger.info(f"Skipping disabled postmortem agent for alert {alert_id}")
+                logger.info(f"Skipping disabled communication agent for alert {alert_id}")
+                
+                # Fallback to individual agents if communication agent is disabled
+                if is_agent_enabled('notification'):
+                    await self.js.publish("notification_agent", json.dumps(enriched_alert).encode())
+                    logger.info(f"Sent alert {alert_id} to notification agent")
+                else:
+                    logger.info(f"Skipping disabled notification agent for alert {alert_id}")
+
+                # Note: Postmortem generation is handled after root cause analysis
+                # and will be sent to communication agent from synthesize_and_respond method
 
             logger.info(f"Distributed alert {alert_id} to enabled specialized agents")
 
@@ -428,13 +495,25 @@ class OrchestratorAgent:
             result = json.loads(msg.data.decode())
             logger.info(f"Received root cause analysis for alert {result.get('alert_id')}")
 
+            # Send to runbook agent for runbook generation
+            if is_agent_enabled('runbook'):
+                await self.js.publish("root_cause_result", json.dumps(result).encode())
+                logger.info(f"Sent root cause result to runbook agent for alert {result.get('alert_id')}")
+            else:
+                logger.info(f"Skipping disabled runbook agent for alert {result.get('alert_id')}")
+
             # Send to notification agent for alert distribution
             if is_agent_enabled('notification'):
                 await self.js.publish("notification_agent", json.dumps(result).encode())
                 logger.info(f"Sent root cause result to notification agent for alert {result.get('alert_id')}")
 
-            # Send to postmortem agent for documentation
-            if is_agent_enabled('postmortem'):
+            # Send to communication agent for postmortem generation
+            if is_agent_enabled('communication'):
+                postmortem_task = result.copy()
+                postmortem_task['task_type'] = 'postmortem'
+                await self.js.publish("communication_agent", json.dumps(postmortem_task).encode())
+                logger.info(f"Sent postmortem task for alert {result.get('alert_id')} to consolidated communication agent")
+            elif is_agent_enabled('postmortem'):
                 await self.js.publish("postmortem_agent", json.dumps(result).encode())
                 logger.info(f"Sent root cause result to postmortem agent for alert {result.get('alert_id')}")
 
@@ -583,7 +662,7 @@ class OrchestratorAgent:
                 await self.js.subscribe(
                     "root_cause_result",
                     cb=self.root_cause_message_handler,
-                    stream="RESPONSES",
+                    stream="ROOT_CAUSE",
                     config=root_cause_consumer
                 )
                 logger.info("Subscribed to root cause results")

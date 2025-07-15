@@ -724,9 +724,13 @@ class RunbookExecutionTool:
             status_update = {
                 "execution_id": execution["execution_id"],
                 "runbook_id": execution["runbook_id"],
+                "incident_id": execution.get("incident_id"),
                 "status": execution["status"],
                 "progress": execution["progress"],
                 "current_step": execution["current_step"],
+                "steps_total": execution.get("steps_total", len(execution.get("steps", []))),
+                "start_time": execution.get("start_time"),
+                "end_time": execution.get("end_time"),
                 "steps": execution["steps"],
                 "timestamp": datetime.now().isoformat()
             }

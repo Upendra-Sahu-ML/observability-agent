@@ -1,4 +1,0 @@
-# Notification-specific dependencies
-slack-sdk>=3.2.0
-pdpyras>=5.4.0
-webexteamssdk

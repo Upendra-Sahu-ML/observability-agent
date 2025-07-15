@@ -1,0 +1,22 @@
+# Core dependencies
+asyncio
+nats-py
+crewai
+python-dotenv
+psutil
+
+# HTTP and data processing
+requests
+urllib3
+
+# Kubernetes and infrastructure tools
+kubernetes
+gitpython
+
+# Date/time utilities
+python-dateutil
+
+# Logging and monitoring
+logging
+
+# JSON processing (built-in with Python)

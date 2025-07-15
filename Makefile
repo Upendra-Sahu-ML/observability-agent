@@ -20,7 +20,7 @@ LOKI_URL ?= http://loki-gateway.monitoring:3100
 PLATFORM ?= linux/amd64
 
 # List of components to build
-COMPONENTS = orchestrator metric-agent log-agent deployment-agent root-cause-agent runbook-agent tracing-agent notification-agent postmortem-agent ui-backend ui k8s-command-backend
+COMPONENTS = orchestrator observability-agent infrastructure-agent communication-agent root-cause-agent unified-backend ui
 
 # Additional tools
 TOOLS = alert-publisher
@@ -43,17 +43,12 @@ help:
 	@echo ""
 	@echo "Individual component targets:"
 	@echo "  orchestrator     : Build the Orchestrator image"
-	@echo "  metric-agent     : Build the Metric Agent image"
-	@echo "  log-agent        : Build the Log Agent image"
-	@echo "  deployment-agent : Build the Deployment Agent image"
+	@echo "  observability-agent : Build the Consolidated Observability Agent image"
+	@echo "  infrastructure-agent : Build the Consolidated Infrastructure Agent image"
+	@echo "  communication-agent : Build the Consolidated Communication Agent image"
 	@echo "  root-cause-agent : Build the Root Cause Agent image"
-	@echo "  runbook-agent    : Build the Runbook Agent image"
-	@echo "  tracing-agent    : Build the Tracing Agent image"
-	@echo "  notification-agent : Build the Notification Agent image"
-	@echo "  postmortem-agent : Build the Postmortem Agent image"
-	@echo "  ui-backend      : Build the UI Backend image"
+	@echo "  unified-backend  : Build the Unified Backend image"
 	@echo "  ui              : Build the UI image"
-	@echo "  k8s-command-backend : Build the K8s Command Backend image"
 	@echo ""
 	@echo "Environment variables:"
 	@echo "  CONTAINER_CMD : Container command to use (default: podman if available, otherwise docker)"
@@ -79,20 +74,15 @@ deploy:
 	helm upgrade --install $(RELEASE_NAME) ./helm/observability-agent \
 		--namespace $(NAMESPACE) --create-namespace \
 		--set global.imageRegistry=$(REGISTRY)/ \
-		--set metricAgent.prometheus.url=$(PROMETHEUS_URL) \
-		--set logAgent.loki.url=$(LOKI_URL) \
+		--set observabilityAgent.prometheus.url=$(PROMETHEUS_URL) \
+		--set observabilityAgent.loki.url=$(LOKI_URL) \
 		--set orchestrator.image.tag=$(TAG) \
-		--set metricAgent.image.tag=$(TAG) \
-		--set logAgent.image.tag=$(TAG) \
-		--set deploymentAgent.image.tag=$(TAG) \
+		--set observabilityAgent.image.tag=$(TAG) \
+		--set infrastructureAgent.image.tag=$(TAG) \
+		--set communicationAgent.image.tag=$(TAG) \
 		--set rootCauseAgent.image.tag=$(TAG) \
-		--set runbookAgent.image.tag=$(TAG) \
-		--set tracingAgent.image.tag=$(TAG) \
-		--set notificationAgent.image.tag=$(TAG) \
-		--set postmortemAgent.image.tag=$(TAG) \
-		--set uiBackend.image.tag=$(TAG) \
-		--set ui.image.tag=$(TAG) \
-		--set k8sCommandBackend.image.tag=$(TAG)
+		--set unifiedBackend.image.tag=$(TAG) \
+		--set ui.image.tag=$(TAG)
 
 # Remove all container images
 clean:
@@ -105,32 +95,20 @@ clean:
 orchestrator:
 	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-orchestrator:$(TAG) -f orchestrator/Dockerfile .
 
-metric-agent:
-	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-metric-agent:$(TAG) -f agents/metric_agent/Dockerfile .
+observability-agent:
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-observability-agent:$(TAG) -f agents/observability_agent/Dockerfile .
 
-log-agent:
-	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-log-agent:$(TAG) -f agents/log_agent/Dockerfile .
+infrastructure-agent:
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-infrastructure-agent:$(TAG) -f agents/infrastructure_agent/Dockerfile .
 
-deployment-agent:
-	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-deployment-agent:$(TAG) -f agents/deployment_agent/Dockerfile .
+communication-agent:
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-communication-agent:$(TAG) -f agents/communication_agent/Dockerfile .
 
 root-cause-agent:
 	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-root-cause-agent:$(TAG) -f agents/root_cause_agent/Dockerfile .
 
-runbook-agent:
-	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-runbook-agent:$(TAG) -f agents/runbook_agent/Dockerfile .
-
-tracing-agent:
-	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-tracing-agent:$(TAG) -f agents/tracing_agent/Dockerfile .
-
-notification-agent:
-	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-notification-agent:$(TAG) -f agents/notification_agent/Dockerfile .
-
-postmortem-agent:
-	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-postmortem-agent:$(TAG) -f agents/postmortem_agent/Dockerfile .
-
-ui-backend:
-	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-ui-backend:$(TAG) -f ui/backend/Dockerfile ui/backend
+unified-backend:
+	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-unified-backend:$(TAG) -f ui/unified-backend/Dockerfile ui/unified-backend
 
 ui:
 	@echo "Building UI React app locally first..."
@@ -138,8 +116,6 @@ ui:
 	@echo "Building UI container with pre-built assets..."
 	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-ui:$(TAG) -f ui/Dockerfile.prebuild ui
 
-k8s-command-backend:
-	$(CONTAINER_CMD) build --platform=$(PLATFORM) -t $(REGISTRY)/observability-agent-k8s-command-backend:$(TAG) -f ui/k8s-command-backend/Dockerfile ui/k8s-command-backend
 
 # Tool targets
 alert-publisher:

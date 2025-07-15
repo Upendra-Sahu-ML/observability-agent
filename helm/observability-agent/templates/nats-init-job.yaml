@@ -20,7 +20,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: nats-init
-          image: "{{ .Values.global.imageRegistry }}{{ .Values.natsInit.image.repository }}:{{ .Values.natsInit.image.tag }}"
+          image: "{{ .Values.natsInit.image.repository }}:{{ .Values.natsInit.image.tag }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           env:
             - name: NATS_URL
@@ -35,8 +35,13 @@ spec:
             - name: init-script
               mountPath: /app
           command:
-            - "python"
-            - "/app/init_nats_streams.py"
+            - "/bin/bash"
+            - "-c"
+            - |
+              echo "Installing required packages..."
+              pip install --no-cache-dir nats-py>=2.2.0 asyncio-nats-streaming>=0.4.0 PyYAML>=6.0
+              echo "Running initialization script..."
+              python /app/init_nats_streams.py
       volumes:
         - name: nats-config-volume
           configMap:

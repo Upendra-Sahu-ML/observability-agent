@@ -1,0 +1,75 @@
+{{- if .Values.agents.enabled.observability }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-observability-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: observability-agent
+spec:
+  replicas: {{ .Values.observabilityAgent.replicas }}
+  selector:
+    matchLabels:
+      {{- include "observability-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: observability-agent
+  template:
+    metadata:
+      labels:
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: observability-agent
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: observability-agent
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.observabilityAgent.image.repository }}:{{ .Values.observabilityAgent.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
+          env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: api_key
+            - name: OPENAI_MODEL
+              value: {{ .Values.openai.model | default "gpt-4" | quote }}
+            - name: PROMETHEUS_URL
+              value: {{ .Values.observabilityAgent.prometheus.url | default "http://prometheus-server.monitoring:9090" | quote }}
+            - name: LOKI_URL
+              value: {{ .Values.observabilityAgent.loki.url | default "http://loki.monitoring:3100" | quote }}
+            - name: TEMPO_URL
+              value: {{ .Values.observabilityAgent.tempo.url | default "http://tempo.monitoring:3200" | quote }}
+            - name: NATS_URL
+              value: nats://{{ include "observability-agent.fullname" . }}-nats:4222
+            {{- range .Values.agents.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- range .Values.observabilityAgent.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.observabilityAgent.resources | nindent 12 }}
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import asyncio; import nats; asyncio.run(nats.connect('nats://{{ include "observability-agent.fullname" . }}-nats:4222', connect_timeout=5))"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import asyncio; import nats; asyncio.run(nats.connect('nats://{{ include "observability-agent.fullname" . }}-nats:4222', connect_timeout=5))"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+{{- end }}

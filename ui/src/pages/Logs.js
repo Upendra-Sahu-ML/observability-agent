@@ -22,7 +22,8 @@ import {
   InputAdornment,
   IconButton,
   Tooltip,
-  Divider
+  Divider,
+  Button
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -30,18 +31,26 @@ import {
   FilterList as FilterListIcon,
   ErrorOutline as ErrorIcon,
   Warning as WarningIcon,
-  Info as InfoIcon
+  Info as InfoIcon,
+  Clear as ClearIcon
 } from '@mui/icons-material';
-// Date picker removed due to compatibility issues
+import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../api';
 
 export default function Logs() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const queryParams = new URLSearchParams(location.search);
+  const alertIdParam = queryParams.get('alertId');
+
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [serviceFilter, setServiceFilter] = useState('');
   const [levelFilter, setLevelFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [alertId, setAlertId] = useState(alertIdParam || '');
+
   // Fetch logs with filters
   const fetchLogs = async () => {
     setLoading(true);
@@ -49,8 +58,11 @@ export default function Logs() {
       // Build query parameters
       const params = {};
       if (serviceFilter) params.service = serviceFilter;
+      if (alertId) params.alertId = alertId;
 
-      const response = await api.get('/logs', { params });
+      // Use the specific endpoint if alertId is provided
+      const endpoint = alertId ? `/alerts/${alertId}/logs` : '/logs';
+      const response = await api.get(endpoint, { params });
       setLogs(response.data);
       setError(null);
     } catch (err) {
@@ -61,9 +73,15 @@ export default function Logs() {
     }
   };
 
+  // Clear alert ID filter
+  const clearAlertFilter = () => {
+    setAlertId('');
+    navigate('/logs', { replace: true });
+  };
+
   useEffect(() => {
     fetchLogs();
-  }, [serviceFilter]);
+  }, [serviceFilter, alertId]);
 
   // Handle service filter change
   const handleServiceFilterChange = (event) => {
@@ -143,6 +161,15 @@ export default function Logs() {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">
           System Logs
+          {alertId && (
+            <Chip
+              label={`Alert: ${alertId}`}
+              color="primary"
+              onDelete={clearAlertFilter}
+              deleteIcon={<ClearIcon />}
+              sx={{ ml: 2 }}
+            />
+          )}
         </Typography>
         <Tooltip title="Refresh logs">
           <IconButton onClick={fetchLogs} disabled={loading}>
@@ -231,6 +258,8 @@ export default function Logs() {
                   <TableCell>Timestamp</TableCell>
                   <TableCell>Level</TableCell>
                   <TableCell>Service</TableCell>
+                  {!alertId && <TableCell>Alert ID</TableCell>}
+                  <TableCell>Source</TableCell>
                   <TableCell>Message</TableCell>
                 </TableRow>
               </TableHead>
@@ -248,6 +277,24 @@ export default function Logs() {
                     </TableCell>
                     <TableCell>
                       <Chip label={log.service} variant="outlined" size="small" />
+                    </TableCell>
+                    {!alertId && (
+                      <TableCell>
+                        {log.alert_id ? (
+                          <Chip
+                            label={log.alert_id}
+                            color="primary"
+                            size="small"
+                            onClick={() => navigate(`/logs?alertId=${log.alert_id}`)}
+                            clickable
+                          />
+                        ) : (
+                          <Typography variant="body2" color="textSecondary">-</Typography>
+                        )}
+                      </TableCell>
+                    )}
+                    <TableCell>
+                      <Chip label={log.source || 'unknown'} variant="outlined" size="small" />
                     </TableCell>
                     <TableCell sx={{ fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
                       {log.message}

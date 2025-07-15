@@ -1,4 +1,0 @@
-# Prometheus specific dependencies
-prometheus-api-client>=0.5.3
-pandas>=2.0.0
-numpy>=1.24.0

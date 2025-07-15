@@ -1,0 +1,141 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-unified-backend
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: unified-backend
+spec:
+  replicas: {{ .Values.unifiedBackend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "observability-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: unified-backend
+  template:
+    metadata:
+      labels:
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: unified-backend
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "observability-agent.fullname" . }}-unified-backend
+      containers:
+        - name: unified-backend
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.unifiedBackend.image.repository }}:{{ .Values.unifiedBackend.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: 5000
+              protocol: TCP
+          env:
+            - name: NATS_URL
+              value: nats://{{ include "observability-agent.fullname" . }}-nats:4222
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: api_key
+            - name: PORT
+              value: "5000"
+            - name: CACHE_TTL
+              value: {{ .Values.unifiedBackend.cacheTTL | default "300000" | quote }}
+            {{- range .Values.unifiedBackend.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.unifiedBackend.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /api/agents
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/agents
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            {{- if .Values.unifiedBackend.kubeconfig.enabled }}
+            - name: kubeconfig
+              mountPath: /root/.kube
+              readOnly: true
+            {{- end }}
+      volumes:
+        {{- if .Values.unifiedBackend.kubeconfig.enabled }}
+        - name: kubeconfig
+          secret:
+            secretName: {{ .Values.unifiedBackend.kubeconfig.secretName }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-unified-backend
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: unified-backend
+spec:
+  type: {{ .Values.unifiedBackend.service.type }}
+  ports:
+    - port: {{ .Values.unifiedBackend.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "observability-agent.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: unified-backend
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-unified-backend
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: unified-backend
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-unified-backend
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: unified-backend
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "services", "events", "namespaces", "nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-unified-backend
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: unified-backend
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "observability-agent.fullname" . }}-unified-backend
+subjects:
+- kind: ServiceAccount
+  name: {{ include "observability-agent.fullname" . }}-unified-backend
+  namespace: {{ .Release.Namespace }}

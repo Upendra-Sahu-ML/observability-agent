@@ -54,7 +54,7 @@ export default function Deployment() {
   const fetchDeployments = async () => {
     setLoading(true);
     try {
-      const response = await api.get('/deployment');
+      const response = await api.get('/api/deployment');
       setDeployments(response.data);
       setError(null);
     } catch (err) {
@@ -97,12 +97,14 @@ export default function Deployment() {
     if (!status) return 'default';
 
     switch (status.toLowerCase()) {
-      case 'deployed':
+      case 'success':
         return 'success';
       case 'failed':
         return 'error';
-      case 'pending':
+      case 'in_progress':
         return 'warning';
+      case 'unknown':
+        return 'default';
       default:
         return 'default';
     }
@@ -113,12 +115,14 @@ export default function Deployment() {
     if (!status) return null;
 
     switch (status.toLowerCase()) {
-      case 'deployed':
+      case 'success':
         return <SuccessIcon />;
       case 'failed':
         return <FailedIcon />;
-      case 'pending':
+      case 'in_progress':
         return <PendingIcon />;
+      case 'unknown':
+        return null;
       default:
         return null;
     }
@@ -132,9 +136,9 @@ export default function Deployment() {
   // Get deployment statistics
   const getDeploymentStats = () => {
     const total = deployments.length;
-    const successful = deployments.filter(d => d.status.toLowerCase() === 'deployed').length;
+    const successful = deployments.filter(d => d.status.toLowerCase() === 'success').length;
     const failed = deployments.filter(d => d.status.toLowerCase() === 'failed').length;
-    const pending = deployments.filter(d => d.status.toLowerCase() === 'pending').length;
+    const pending = deployments.filter(d => d.status.toLowerCase() === 'in_progress').length;
 
     return { total, successful, failed, pending };
   };
@@ -156,11 +160,11 @@ export default function Deployment() {
 
       serviceMap[deployment.service].total++;
 
-      if (deployment.status.toLowerCase() === 'deployed') {
+      if (deployment.status.toLowerCase() === 'success') {
         serviceMap[deployment.service].successful++;
       } else if (deployment.status.toLowerCase() === 'failed') {
         serviceMap[deployment.service].failed++;
-      } else if (deployment.status.toLowerCase() === 'pending') {
+      } else if (deployment.status.toLowerCase() === 'in_progress') {
         serviceMap[deployment.service].pending++;
       }
 
