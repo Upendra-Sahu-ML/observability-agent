@@ -1,0 +1,155 @@
+{{- if .Values.agents.enabled.infrastructure }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-infrastructure-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: infrastructure-agent
+spec:
+  replicas: {{ .Values.infrastructureAgent.replicas }}
+  selector:
+    matchLabels:
+      {{- include "observability-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: infrastructure-agent
+  template:
+    metadata:
+      labels:
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: infrastructure-agent
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "observability-agent.fullname" . }}-infrastructure-agent
+      containers:
+        - name: infrastructure-agent
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.infrastructureAgent.image.repository }}:{{ .Values.infrastructureAgent.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
+          env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: api_key
+            - name: OPENAI_MODEL
+              value: {{ .Values.openai.model | default "gpt-4" | quote }}
+            - name: ARGOCD_SERVER
+              value: {{ .Values.infrastructureAgent.argocd.server | default "https://argocd-server.argocd:443" | quote }}
+            - name: GIT_REPO_PATH
+              value: {{ .Values.infrastructureAgent.git.repoPath | default "/app/repo" | quote }}
+            - name: RUNBOOK_DIR
+              value: {{ .Values.infrastructureAgent.runbooks.directory | default "/runbooks" | quote }}
+            - name: NATS_URL
+              value: nats://{{ include "observability-agent.fullname" . }}-nats:4222
+            {{- range .Values.agents.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- range .Values.infrastructureAgent.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.infrastructureAgent.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.infrastructureAgent.kubeconfig.enabled }}
+            - name: kubeconfig
+              mountPath: /root/.kube
+              readOnly: true
+            {{- end }}
+            {{- if .Values.infrastructureAgent.git.enabled }}
+            - name: git-credentials
+              mountPath: /root/.git-credentials
+              readOnly: true
+            {{- end }}
+            {{- if .Values.infrastructureAgent.runbooks.enabled }}
+            - name: runbooks
+              mountPath: /runbooks
+              readOnly: true
+            {{- end }}
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import asyncio; import nats; asyncio.run(nats.connect('nats://{{ include "observability-agent.fullname" . }}-nats:4222', connect_timeout=5))"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import asyncio; import nats; asyncio.run(nats.connect('nats://{{ include "observability-agent.fullname" . }}-nats:4222', connect_timeout=5))"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        {{- if .Values.infrastructureAgent.kubeconfig.enabled }}
+        - name: kubeconfig
+          secret:
+            secretName: {{ .Values.infrastructureAgent.kubeconfig.secretName }}
+        {{- end }}
+        {{- if .Values.infrastructureAgent.git.enabled }}
+        - name: git-credentials
+          secret:
+            secretName: {{ .Values.infrastructureAgent.git.credentialsSecret }}
+        {{- end }}
+        {{- if .Values.infrastructureAgent.runbooks.enabled }}
+        - name: runbooks
+          configMap:
+            name: {{ .Values.infrastructureAgent.runbooks.configMap }}
+        {{- end }}
+---
+{{- if .Values.infrastructureAgent.rbac.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-infrastructure-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: infrastructure-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-infrastructure-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: infrastructure-agent
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "services", "events", "namespaces", "nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "patch", "update"]
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-infrastructure-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: infrastructure-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "observability-agent.fullname" . }}-infrastructure-agent
+subjects:
+- kind: ServiceAccount
+  name: {{ include "observability-agent.fullname" . }}-infrastructure-agent
+  namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

@@ -1,8 +1,26 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install uv
+# Install system dependencies for Azure CLI, kubectl, and common tools
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    gnupg \
+    lsb-release \
+    ca-certificates \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Azure CLI
+RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
+# Install kubectl
+RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+    && chmod +x kubectl \
+    && mv kubectl /usr/local/bin/
+
+# Install uv for fast Python package installation
 RUN pip install --no-cache-dir uv
 
 # Copy requirements and install dependencies

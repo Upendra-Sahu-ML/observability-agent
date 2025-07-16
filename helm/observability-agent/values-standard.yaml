@@ -1,0 +1,132 @@
+# Standard deployment mode - full observability with intelligent runbook execution
+# For teams with existing observability infrastructure
+
+# Deployment mode
+deployment:
+  mode: "standard"
+  description: "Full observability integration with intelligent runbook execution"
+
+# OpenAI API settings (required)
+openai:
+  apiKey: "your_openai_api_key"
+  model: "gpt-4o-mini"  # Balanced model for standard mode
+
+# NATS service (required for all modes)
+nats:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 2Gi
+    memStorage: 2G
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+# Standard agent configuration
+agents:
+  enabled:
+    # Consolidated agents (simplified from 10 to 4)
+    observability: true      # Unified observability analysis
+    infrastructure: true     # Deployment + runbook management
+    communication: true      # Notifications + postmortems
+    rootCause: true         # Root cause analysis
+    
+    # Disable legacy individual agents
+    metric: false
+    log: false
+    tracing: false
+    deployment: false
+    runbook: false
+    notification: false
+    postmortem: false
+
+# Full observability integration
+observability:
+  prometheus:
+    enabled: true
+    url: "http://prometheus:9090"
+  loki:
+    enabled: true
+    url: "http://loki:3100"
+  tempo:
+    enabled: true  # Optional but recommended
+    url: "http://tempo:3200"
+
+# Enhanced notifications
+notifications:
+  slack:
+    enabled: true
+    token: "your_slack_token"
+    defaultChannel: "#incidents"
+  pagerduty:
+    enabled: true
+    integrationKey: "your_pagerduty_key"
+  webex:
+    enabled: false
+    token: ""
+
+# Full UI features
+ui:
+  enabled: true
+  resources:
+    limits:
+      memory: 256Mi
+      cpu: 200m
+    requests:
+      memory: 128Mi
+      cpu: 100m
+
+# Unified backend with full features
+unifiedBackend:
+  enabled: true
+  features:
+    k8sCommands: true
+    notebooks: true
+    postmortems: true
+    fullObservability: true
+  resources:
+    limits:
+      memory: 512Mi
+      cpu: 400m
+    requests:
+      memory: 256Mi
+      cpu: 200m
+
+# Kubernetes integration with enhanced permissions
+kubernetes:
+  rbac:
+    enabled: true
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "deployments", "events", "configmaps"]
+        verbs: ["get", "list", "watch", "update", "patch"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "replicasets", "daemonsets"]
+        verbs: ["get", "list", "watch", "update", "patch"]
+      - apiGroups: ["metrics.k8s.io"]
+        resources: ["pods", "nodes"]
+        verbs: ["get", "list"]
+
+# Resource limits for standard mode
+resources:
+  limits:
+    totalMemory: "3Gi"
+    totalCpu: "2000m"
+  requests:
+    totalMemory: "1.5Gi"
+    totalCpu: "1000m"
+
+# Optional integrations
+integrations:
+  argocd:
+    enabled: false
+    url: "https://argocd-server:443"
+  git:
+    enabled: true
+    repositories:
+      - name: "main"
+        url: "https://github.com/your-org/runbooks.git"

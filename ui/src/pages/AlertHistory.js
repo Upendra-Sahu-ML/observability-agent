@@ -28,6 +28,8 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import ListAltIcon from '@mui/icons-material/ListAlt';
+import { useNavigate } from 'react-router-dom';
 import api from '../api';
 
 // TabPanel component for tab content
@@ -52,6 +54,7 @@ function TabPanel(props) {
 }
 
 export default function AlertHistory() {
+  const navigate = useNavigate();
   const [value, setValue] = useState(0);
   const [alerts, setAlerts] = useState([]);
   const [activeAlerts, setActiveAlerts] = useState([]);
@@ -74,7 +77,7 @@ export default function AlertHistory() {
       // Fetch historical alerts
       const historicalResponse = await api.get('/alerts/history');
       setAlerts(historicalResponse.data);
-      
+
       // Fetch active alerts
       const activeResponse = await api.get('/alerts/active');
       setActiveAlerts(activeResponse.data);
@@ -118,20 +121,35 @@ export default function AlertHistory() {
     setSelectedAlert(alert);
   };
 
-  // Filter alerts based on search term
-  const filteredHistoricalAlerts = alerts.filter(alert => 
-    alert.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    alert.labels.alertname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (alert.labels.service && alert.labels.service.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (alert.labels.severity && alert.labels.severity.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Navigate to logs page with alert ID filter
+  const handleViewLogs = (alertId) => {
+    navigate(`/logs?alertId=${alertId}`);
+  };
 
-  const filteredActiveAlerts = activeAlerts.filter(alert => 
-    alert.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    alert.labels.alertname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (alert.labels.service && alert.labels.service.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (alert.labels.severity && alert.labels.severity.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Filter alerts based on search term
+  const filteredHistoricalAlerts = alerts.filter(alert => {
+    // Safely check for existence of nested properties before access
+    const alertname = alert.labels?.alertname || '';
+    const service = alert.labels?.service || '';
+    const severity = alert.labels?.severity || '';
+
+    return alert.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alertname.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      service.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      severity.toLowerCase().includes(searchTerm.toLowerCase());
+  });
+
+  const filteredActiveAlerts = activeAlerts.filter(alert => {
+    // Safely check for existence of nested properties before access
+    const alertname = alert.labels?.alertname || '';
+    const service = alert.labels?.service || '';
+    const severity = alert.labels?.severity || '';
+
+    return alert.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alertname.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      service.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      severity.toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
   // Get severity color
   const getSeverityColor = (severity) => {
@@ -170,40 +188,50 @@ export default function AlertHistory() {
     return (
       <Card sx={{ mt: 2 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Alert Details
-          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">
+              Alert Details
+            </Typography>
+            <Button
+              variant="outlined"
+              startIcon={<ListAltIcon />}
+              onClick={() => handleViewLogs(selectedAlert.id)}
+              size="small"
+            >
+              View Logs
+            </Button>
+          </Box>
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
               <Typography variant="subtitle2">Alert ID</Typography>
               <Typography variant="body2" gutterBottom>{selectedAlert.id}</Typography>
-              
+
               <Typography variant="subtitle2">Alert Name</Typography>
-              <Typography variant="body2" gutterBottom>{selectedAlert.labels.alertname}</Typography>
-              
+              <Typography variant="body2" gutterBottom>{selectedAlert.labels?.alertname || 'Unknown Alert'}</Typography>
+
               <Typography variant="subtitle2">Service</Typography>
-              <Typography variant="body2" gutterBottom>{selectedAlert.labels.service || 'N/A'}</Typography>
-              
+              <Typography variant="body2" gutterBottom>{selectedAlert.labels?.service || 'N/A'}</Typography>
+
               <Typography variant="subtitle2">Severity</Typography>
-              <Chip 
-                label={selectedAlert.labels.severity || 'Unknown'} 
-                color={getSeverityColor(selectedAlert.labels.severity)}
+              <Chip
+                label={selectedAlert.labels?.severity || 'Unknown'}
+                color={getSeverityColor(selectedAlert.labels?.severity)}
                 size="small"
               />
             </Grid>
             <Grid item xs={12} md={6}>
               <Typography variant="subtitle2">Status</Typography>
-              <Chip 
-                label={selectedAlert.status || 'Open'} 
+              <Chip
+                label={selectedAlert.status || 'Open'}
                 color={getStatusColor(selectedAlert.status)}
                 size="small"
               />
-              
+
               <Typography variant="subtitle2" sx={{ mt: 1 }}>Start Time</Typography>
               <Typography variant="body2" gutterBottom>
-                {new Date(selectedAlert.startsAt).toLocaleString()}
+                {new Date(selectedAlert.startsAt || Date.now()).toLocaleString()}
               </Typography>
-              
+
               {selectedAlert.endsAt && (
                 <>
                   <Typography variant="subtitle2">End Time</Typography>
@@ -218,7 +246,7 @@ export default function AlertHistory() {
               <Typography variant="body2" gutterBottom>
                 {selectedAlert.annotations?.description || 'No description available'}
               </Typography>
-              
+
               {selectedAlert.annotations?.value && (
                 <>
                   <Typography variant="subtitle2">Value</Typography>
@@ -227,7 +255,7 @@ export default function AlertHistory() {
                   </Typography>
                 </>
               )}
-              
+
               {selectedAlert.annotations?.threshold && (
                 <>
                   <Typography variant="subtitle2">Threshold</Typography>
@@ -248,7 +276,7 @@ export default function AlertHistory() {
       <Typography variant="h4" gutterBottom>
         Alert History
       </Typography>
-      
+
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <TextField
           placeholder="Search alerts..."
@@ -274,7 +302,7 @@ export default function AlertHistory() {
           Refresh
         </Button>
       </Box>
-      
+
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
           <CircularProgress />
@@ -289,7 +317,7 @@ export default function AlertHistory() {
               <Tab label={`Historical Alerts (${alerts.length})`} id="alert-tab-1" />
             </Tabs>
           </Box>
-          
+
           <TabPanel value={value} index={0}>
             {filteredActiveAlerts.length === 0 ? (
               <Alert severity="info">No active alerts found</Alert>
@@ -313,29 +341,36 @@ export default function AlertHistory() {
                       .map((alert) => (
                         <TableRow key={alert.id} hover>
                           <TableCell>{alert.id}</TableCell>
-                          <TableCell>{alert.labels.alertname}</TableCell>
-                          <TableCell>{alert.labels.service || 'N/A'}</TableCell>
+                          <TableCell>{alert.labels?.alertname || 'Unknown Alert'}</TableCell>
+                          <TableCell>{alert.labels?.service || 'N/A'}</TableCell>
                           <TableCell>
-                            <Chip 
-                              label={alert.labels.severity || 'Unknown'} 
-                              color={getSeverityColor(alert.labels.severity)}
+                            <Chip
+                              label={alert.labels?.severity || 'Unknown'}
+                              color={getSeverityColor(alert.labels?.severity)}
                               size="small"
                             />
                           </TableCell>
                           <TableCell>
-                            <Chip 
-                              label={alert.status || 'Open'} 
+                            <Chip
+                              label={alert.status || 'Open'}
                               color={getStatusColor(alert.status)}
                               size="small"
                             />
                           </TableCell>
-                          <TableCell>{new Date(alert.startsAt).toLocaleString()}</TableCell>
+                          <TableCell>{new Date(alert.startsAt || Date.now()).toLocaleString()}</TableCell>
                           <TableCell>
-                            <Tooltip title="View Details">
-                              <IconButton size="small" onClick={() => handleAlertSelect(alert)}>
-                                <VisibilityIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
+                            <Box sx={{ display: 'flex' }}>
+                              <Tooltip title="View Details">
+                                <IconButton size="small" onClick={() => handleAlertSelect(alert)}>
+                                  <VisibilityIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="View Logs">
+                                <IconButton size="small" onClick={() => handleViewLogs(alert.id)}>
+                                  <ListAltIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -353,7 +388,7 @@ export default function AlertHistory() {
               </TableContainer>
             )}
           </TabPanel>
-          
+
           <TabPanel value={value} index={1}>
             {filteredHistoricalAlerts.length === 0 ? (
               <Alert severity="info">No historical alerts found</Alert>
@@ -378,32 +413,39 @@ export default function AlertHistory() {
                       .map((alert) => (
                         <TableRow key={alert.id} hover>
                           <TableCell>{alert.id}</TableCell>
-                          <TableCell>{alert.labels.alertname}</TableCell>
-                          <TableCell>{alert.labels.service || 'N/A'}</TableCell>
+                          <TableCell>{alert.labels?.alertname || 'Unknown Alert'}</TableCell>
+                          <TableCell>{alert.labels?.service || 'N/A'}</TableCell>
                           <TableCell>
-                            <Chip 
-                              label={alert.labels.severity || 'Unknown'} 
-                              color={getSeverityColor(alert.labels.severity)}
+                            <Chip
+                              label={alert.labels?.severity || 'Unknown'}
+                              color={getSeverityColor(alert.labels?.severity)}
                               size="small"
                             />
                           </TableCell>
                           <TableCell>
-                            <Chip 
-                              label={alert.status || 'Resolved'} 
+                            <Chip
+                              label={alert.status || 'Resolved'}
                               color={getStatusColor(alert.status)}
                               size="small"
                             />
                           </TableCell>
-                          <TableCell>{new Date(alert.startsAt).toLocaleString()}</TableCell>
+                          <TableCell>{new Date(alert.startsAt || Date.now()).toLocaleString()}</TableCell>
                           <TableCell>
                             {alert.endsAt ? new Date(alert.endsAt).toLocaleString() : 'N/A'}
                           </TableCell>
                           <TableCell>
-                            <Tooltip title="View Details">
-                              <IconButton size="small" onClick={() => handleAlertSelect(alert)}>
-                                <VisibilityIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
+                            <Box sx={{ display: 'flex' }}>
+                              <Tooltip title="View Details">
+                                <IconButton size="small" onClick={() => handleAlertSelect(alert)}>
+                                  <VisibilityIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="View Logs">
+                                <IconButton size="small" onClick={() => handleViewLogs(alert.id)}>
+                                  <ListAltIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -421,7 +463,7 @@ export default function AlertHistory() {
               </TableContainer>
             )}
           </TabPanel>
-          
+
           {selectedAlert && renderAlertDetails()}
         </>
       )}

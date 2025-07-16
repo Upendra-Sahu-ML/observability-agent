@@ -1,0 +1,150 @@
+{{- if .Values.agents.enabled.communication }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-communication-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: communication-agent
+spec:
+  replicas: {{ .Values.communicationAgent.replicas }}
+  selector:
+    matchLabels:
+      {{- include "observability-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: communication-agent
+  template:
+    metadata:
+      labels:
+        {{- include "observability-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: communication-agent
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "observability-agent.fullname" . }}-communication-agent
+      containers:
+        - name: communication-agent
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.communicationAgent.image.repository }}:{{ .Values.communicationAgent.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
+          env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-openai
+                  key: api_key
+            - name: OPENAI_MODEL
+              value: {{ .Values.openai.model | default "gpt-4" | quote }}
+            - name: NATS_URL
+              value: nats://{{ include "observability-agent.fullname" . }}-nats:4222
+            {{- if .Values.communicationAgent.slack.enabled }}
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-slack
+                  key: bot_token
+            - name: SLACK_CHANNEL
+              value: {{ .Values.communicationAgent.slack.channel | quote }}
+            {{- end }}
+            {{- if .Values.communicationAgent.webex.enabled }}
+            - name: WEBEX_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-webex
+                  key: bot_token
+            - name: WEBEX_ROOM_ID
+              value: {{ .Values.communicationAgent.webex.roomId | quote }}
+            {{- end }}
+            {{- if .Values.communicationAgent.pagerduty.enabled }}
+            - name: PAGERDUTY_INTEGRATION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "observability-agent.fullname" . }}-pagerduty
+                  key: integration_key
+            - name: PAGERDUTY_SERVICE_ID
+              value: {{ .Values.communicationAgent.pagerduty.serviceId | quote }}
+            {{- end }}
+            - name: TEMPLATE_DIR
+              value: {{ .Values.communicationAgent.templates.directory | default "/templates" | quote }}
+            {{- range .Values.agents.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- range .Values.communicationAgent.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.communicationAgent.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.communicationAgent.templates.enabled }}
+            - name: postmortem-templates
+              mountPath: /templates
+              readOnly: true
+            {{- end }}
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import asyncio; import nats; asyncio.run(nats.connect('nats://{{ include "observability-agent.fullname" . }}-nats:4222', connect_timeout=5))"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import asyncio; import nats; asyncio.run(nats.connect('nats://{{ include "observability-agent.fullname" . }}-nats:4222', connect_timeout=5))"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        {{- if .Values.communicationAgent.templates.enabled }}
+        - name: postmortem-templates
+          configMap:
+            name: {{ .Values.communicationAgent.templates.configMap }}
+        {{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-communication-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: communication-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-communication-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: communication-agent
+rules:
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods", "services", "namespaces"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-communication-agent
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: communication-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "observability-agent.fullname" . }}-communication-agent
+subjects:
+- kind: ServiceAccount
+  name: {{ include "observability-agent.fullname" . }}-communication-agent
+  namespace: {{ .Release.Namespace }}
+{{- end }}

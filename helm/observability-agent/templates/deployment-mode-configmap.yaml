@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "observability-agent.fullname" . }}-deployment-mode
+  labels:
+    {{- include "observability-agent.labels" . | nindent 4 }}
+data:
+  deployment.mode: {{ .Values.deployment.mode | default "standard" | quote }}
+  deployment.description: {{ .Values.deployment.description | default "Standard deployment mode" | quote }}
+  
+  # Feature flags based on deployment mode
+  {{- if eq .Values.deployment.mode "basic" }}
+  features.observability: "basic"
+  features.runbooks: "enabled"
+  features.notifications: "basic"
+  features.ui: "minimal"
+  {{- else if eq .Values.deployment.mode "standard" }}
+  features.observability: "full"
+  features.runbooks: "intelligent"
+  features.notifications: "full"
+  features.ui: "full"
+  {{- else }}
+  features.observability: "full"
+  features.runbooks: "intelligent"
+  features.notifications: "full"
+  features.ui: "full"
+  {{- end }}
+  
+  # Observability tool availability
+  observability.prometheus.enabled: {{ .Values.observability.prometheus.enabled | default false | quote }}
+  observability.loki.enabled: {{ .Values.observability.loki.enabled | default false | quote }}
+  observability.tempo.enabled: {{ .Values.observability.tempo.enabled | default false | quote }}
+  
+  # Agent configuration
+  {{- range $agent, $enabled := .Values.agents.enabled }}
+  agents.{{ $agent }}.enabled: {{ $enabled | quote }}
+  {{- end }}
+  
+  # Resource configuration
+  {{- if .Values.resources }}
+  resources.limits.memory: {{ .Values.resources.limits.totalMemory | default "2Gi" | quote }}
+  resources.limits.cpu: {{ .Values.resources.limits.totalCpu | default "1000m" | quote }}
+  resources.requests.memory: {{ .Values.resources.requests.totalMemory | default "1Gi" | quote }}
+  resources.requests.cpu: {{ .Values.resources.requests.totalCpu | default "500m" | quote }}
+  {{- end }}

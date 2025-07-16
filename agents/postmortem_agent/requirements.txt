@@ -1,3 +1,0 @@
-# Knowledge base dependencies
-qdrant-client>=1.6.0
-markdown>=3.5.0

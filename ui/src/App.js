@@ -1,6 +1,8 @@
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { Box, Toolbar } from '@mui/material';
+import { ThemeProvider } from '@mui/material/styles';
+import theme from './theme';
 import Navbar from './components/Navbar';
 import Dashboard from './pages/Dashboard';
 import Agents from './pages/Agents';
@@ -22,17 +24,18 @@ const drawerWidth = 240;
 
 function App() {
   return (
-    <Box sx={{ display: 'flex' }}>
-      <Navbar />
-      <Box
-        component="main"
-        sx={{
-          flexGrow: 1,
-          p: 3,
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
-          ml: { sm: `${drawerWidth}px` },
-        }}
-      >
+    <ThemeProvider theme={theme}>
+      <Box sx={{ display: 'flex' }}>
+        <Navbar />
+        <Box
+          component="main"
+          sx={{
+            flexGrow: 1,
+            p: 3,
+            width: { sm: `calc(100% - ${drawerWidth}px)` },
+            ml: { sm: `${drawerWidth}px` },
+          }}
+        >
         <Toolbar /> {/* This empty toolbar creates space below the AppBar */}
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -51,7 +54,8 @@ function App() {
           <Route path="/k8s-command" element={<K8sCommand />} />
         </Routes>
       </Box>
-    </Box>
+      </Box>
+    </ThemeProvider>
   );
 }
 

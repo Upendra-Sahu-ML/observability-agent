@@ -1,6 +1,0 @@
-# FastAPI for the tracing agent's API
-fastapi>=0.95.0
-uvicorn>=0.22.0
-# Tracing specific dependencies
-opentelemetry-api>=1.20.0
-opentelemetry-sdk>=1.20.0

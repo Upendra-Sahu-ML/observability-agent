@@ -4,32 +4,36 @@ Your release is named {{ .Release.Name }}.
 
 The observability-agent system is now deploying with the following components:
   - Orchestrator
-  - Metric Agent (connecting to Prometheus at {{ .Values.metricAgent.prometheus.url }})
-  - Log Agent (connecting to Loki at {{ .Values.logAgent.loki.url }})
-  - Deployment Agent
-  - Root Cause Agent
+{{- if .Values.agents.enabled.observability }}
+  - Consolidated Observability Agent (metrics, logs, tracing)
+{{- else }}
+  - Metric Agent (connecting to Prometheus at {{ .Values.observabilityAgent.prometheus.url }})
+  - Log Agent (connecting to Loki at {{ .Values.observabilityAgent.loki.url }})
   - Tracing Agent
+{{- end }}
+{{- if .Values.agents.enabled.infrastructure }}
+  - Consolidated Infrastructure Agent (deployments, runbooks)
+{{- else }}
+  - Deployment Agent
+  - Runbook Agent
+{{- end }}
+{{- if .Values.agents.enabled.communication }}
+  - Consolidated Communication Agent (notifications, postmortems)
+{{- else }}
   - Notification Agent
   - Postmortem Agent
-  - Runbook Agent
-  - UI Backend
-  - UI
-  - K8s Command Backend
-{{- if .Values.mongodb.enabled }}
-  - MongoDB (used for K8s Command Backend)
 {{- end }}
-{{- if .Values.redis.enabled }}
-  - Redis (used for inter-agent communication)
-{{- else }}
-  - NATS (used for inter-agent communication)
+{{- if .Values.agents.enabled.rootCause }}
+  - Root Cause Agent
 {{- end }}
+  - Unified Backend (API + K8s commands, no database required)
+  - UI (React frontend)
+  - NATS JetStream (messaging and persistence)
 
-{{- if .Values.redis.enabled }}
-Redis is being deployed as part of this chart and will be available at:
-  {{ include "observability-agent.fullname" . }}-redis:6379
-{{- else }}
-The system will use NATS for messaging, which is enabled by default.
-{{- end }}
+The system uses NATS JetStream for:
+  - Agent communication and task distribution
+  - Data persistence (replacing external databases)
+  - Real-time streaming of observability data
 
 To test the system, you can send an alert message to the Orchestrator by using:
 
@@ -41,15 +45,13 @@ To access the UI:
 kubectl port-forward svc/{{ include "observability-agent.fullname" . }}-ui 8080:80
 # Then open http://localhost:8080 in your browser
 
-To access the UI Backend API directly:
+To access the Unified Backend API directly:
 
-kubectl port-forward svc/{{ include "observability-agent.fullname" . }}-ui-backend 5000:5000
-# Then use http://localhost:5000/api endpoints
-
-To access the K8s Command Backend API directly:
-
-kubectl port-forward svc/{{ include "observability-agent.fullname" . }}-k8s-command-backend 5002:5002
-# Then use http://localhost:5002/api endpoints
+kubectl port-forward svc/{{ include "observability-agent.fullname" . }}-unified-backend 5000:5000
+# Then use http://localhost:5000/api endpoints for:
+#   - Observability data: /api/metrics, /api/logs, /api/agents, etc.
+#   - K8s commands: /api/k8s/translate, /api/k8s/execute
+#   - Notebooks: /api/notebooks
 
 For more information on how to use the Observability Agent, please see:
 https://github.com/yourusername/observability-agent

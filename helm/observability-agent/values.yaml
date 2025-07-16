@@ -13,7 +13,7 @@ global:
 # OpenAI API settings
 openai:
   # API key for OpenAI (required)
-  apiKey: "YOUR_OPENAI_API_KEY"
+  apiKey: "your_openai_api_key"
   # Model to use (default: gpt-4)
   model: "gpt-4o-mini"
 
@@ -29,11 +29,11 @@ nats:
     enabled: true
   persistence:
     # Persistence settings for NATS
-    enabled: false  # Disabled for local development - change to true for production
+    enabled: true  # Disabled for local development - change to true for production
     # Storage size for NATS persistence
-    size: 1Gi
+    size: 5Gi
     # Alternatively, use memory storage (faster but non-persistent)
-    memStorage: 1G
+    memStorage: 4G
     storageClass: ""  # Use default storage class
   resources:
     limits:
@@ -43,67 +43,21 @@ nats:
       cpu: 100m
       memory: 128Mi
 
-# Redis configuration (disabled by default as we're now using NATS)
-redis:
-  enabled: false
+# NATS initialization job configuration
+natsInit:
   image:
-    repository: redis
-    tag: "7.0-alpine"
-    pullPolicy: IfNotPresent
+    repository: python
+    tag: "3.10-slim"
   resources:
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 200m
+      memory: 256Mi
     requests:
       cpu: 100m
       memory: 128Mi
 
-# Qdrant configuration
-qdrant:
-  # Whether to deploy Qdrant as part of this chart
-  enabled: true
-  # Use external Qdrant instance
-  external:
-    enabled: false
-    url: http://qdrant:6333
-  # Qdrant image configuration
-  image:
-    repository: qdrant/qdrant
-    tag: "v1.5.0"
-  # Qdrant resource requests and limits
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "200m"
-    limits:
-      memory: "512Mi"
-      cpu: "500m"
-  # Qdrant persistence settings
-  persistence:
-    enabled: true
-    size: 1Gi
-    storageClass: ""
-  # Qdrant service configuration
-  service:
-    type: ClusterIP
-    port: 6333
-  # Qdrant API configuration
-  api:
-    port: 6333
-    grpcPort: 6334
-  # Qdrant settings
-  settings:
-    storage:
-      # Enable snapshot creation
-      snapshot:
-        enabled: true
-        interval: 24h
-      # Enable payload indexing
-      payloadIndexing:
-        enabled: true
-    # Enable telemetry
-    telemetry:
-      enabled: false
+# Database-Free Architecture
+# This system uses pure NATS persistence - no Redis, MongoDB, or Qdrant required
 
 # Common settings for all agents
 agents:
@@ -123,14 +77,117 @@ agents:
       cpu: "200m"
   # Agent enablement configuration
   enabled:
-    metric: true
-    log: true
-    deployment: true
-    tracing: true
+    observability: true    # Consolidated agent (replaces metric, log, tracing)
+    infrastructure: true   # Consolidated agent (replaces deployment, runbook)
+    communication: true    # Consolidated agent (replaces notification, postmortem)
+    metric: false          # Disabled when using consolidated observability agent
+    log: false             # Disabled when using consolidated observability agent  
+    tracing: false         # Disabled when using consolidated observability agent
+    deployment: false      # Disabled when using consolidated infrastructure agent
+    runbook: false         # Disabled when using consolidated infrastructure agent
     rootCause: true
-    runbook: true
-    notification: true
-    postmortem: true
+    notification: false    # Disabled when using consolidated communication agent
+    postmortem: false      # Disabled when using consolidated communication agent
+
+# Consolidated Observability Agent configuration (replaces metric, log, tracing agents)
+observabilityAgent:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent-observability-agent
+    tag: latest
+  # Resource settings (increased since it handles 3 agents' workload)
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  # Additional environment variables
+  env: []
+  # Data source configurations
+  prometheus:
+    url: "http://prometheus-server.monitoring:9090"
+  loki:
+    url: "http://loki.monitoring:3100"
+  tempo:
+    url: "http://tempo.monitoring:3200"
+
+# Consolidated Infrastructure Agent configuration (replaces deployment, runbook agents)
+infrastructureAgent:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent-infrastructure-agent
+    tag: latest
+  # Resource settings (increased since it handles infrastructure operations)
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  # Additional environment variables
+  env: []
+  # Infrastructure service configurations
+  argocd:
+    server: "https://argocd-server.argocd:443"
+  git:
+    enabled: false
+    repoPath: "/app/repo"
+    credentialsSecret: "git-credentials"
+  runbooks:
+    enabled: false
+    directory: "/runbooks"
+    configMap: "runbooks-config"
+  # Kubernetes configuration
+  kubeconfig:
+    enabled: true
+    secretName: "kubeconfig"
+  # RBAC configuration
+  rbac:
+    create: true
+
+# Consolidated Communication Agent configuration (replaces notification, postmortem agents)
+communicationAgent:
+  # Number of replicas to run
+  replicas: 1
+  # Image settings
+  image:
+    repository: observability-agent-communication-agent
+    tag: latest
+  # Resource settings (increased since it handles communication operations)
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  # Additional environment variables
+  env: []
+  # Notification service configurations
+  slack:
+    enabled: false
+    botToken: ""
+    channel: "#alerts"
+  webex:
+    enabled: false
+    botToken: ""
+    roomId: ""
+  pagerduty:
+    enabled: false
+    integrationKey: ""
+    serviceId: ""
+  # Postmortem template configuration
+  templates:
+    enabled: false
+    directory: "/templates"
+    configMap: "postmortem-templates"
 
 # Orchestrator configuration
 orchestrator:
@@ -155,75 +212,6 @@ orchestrator:
   # Additional environment variables
   env: []
 
-# Metric Agent configuration
-metricAgent:
-  # Number of replicas to run
-  replicas: 1
-  # Image settings
-  image:
-    repository: observability-agent-metric-agent
-    tag: latest
-  # Resource settings
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "100m"
-    limits:
-      memory: "512Mi"
-      cpu: "200m"
-  # Additional environment variables
-  env: []
-  # Prometheus settings
-  prometheus:
-    url: "http://prometheus-server.monitoring:9090"
-
-# Log Agent configuration
-logAgent:
-  # Number of replicas to run
-  replicas: 1
-  # Image settings
-  image:
-    repository: observability-agent-log-agent
-    tag: latest
-  # Resource settings
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "100m"
-    limits:
-      memory: "512Mi"
-      cpu: "200m"
-  # Additional environment variables
-  env: []
-  # Loki settings
-  loki:
-    url: "http://loki-gateway.monitoring:3100"
-
-# Deployment Agent configuration
-deploymentAgent:
-  # Number of replicas to run
-  replicas: 1
-  # Image settings
-  image:
-    repository: observability-agent-deployment-agent
-    tag: latest
-  # Resource settings
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "100m"
-    limits:
-      memory: "512Mi"
-      cpu: "200m"
-  # Additional environment variables
-  env: []
-  # ArgoCD settings
-  argocd:
-    url: "https://argocd-server.argocd:443"
-    insecure: true
-  # Git repository path
-  gitRepoPath: /app/repo
-
 # Root Cause Agent configuration
 rootCauseAgent:
   # Number of replicas to run
@@ -243,85 +231,6 @@ rootCauseAgent:
   # Additional environment variables
   env: []
 
-# Tracing Agent configuration
-tracingAgent:
-  # Number of replicas to run
-  replicas: 1
-  # Image settings
-  image:
-    repository: observability-agent-tracing-agent
-    tag: latest
-  # Resource settings
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "100m"
-    limits:
-      memory: "512Mi"
-      cpu: "200m"
-  # Additional environment variables
-  env: []
-  # Tempo settings
-  tempo:
-    url: "http://tempo:3100"
-
-# Runbook Agent configuration
-runbookAgent:
-  # Number of replicas to run
-  replicas: 1
-  # Image settings
-  image:
-    repository: observability-agent-runbook-agent
-    tag: latest
-  # Resource settings
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "100m"
-    limits:
-      memory: "512Mi"
-      cpu: "200m"
-  # Additional environment variables
-  env: []
-
-# Notification Agent configuration
-notificationAgent:
-  # Number of replicas to run
-  replicas: 1
-  # Image settings
-  image:
-    repository: observability-agent-notification-agent
-    tag: latest
-  # Resource settings
-  resources:
-    requests:
-      memory: "128Mi"
-      cpu: "100m"
-    limits:
-      memory: "512Mi"
-      cpu: "500m"
-  # Additional environment variables
-  env: []
-
-# Postmortem Agent configuration
-postmortemAgent:
-  # Number of replicas to run
-  replicas: 1
-  # Image settings
-  image:
-    repository: observability-agent-postmortem-agent
-    tag: latest
-  # Resource settings
-  resources:
-    requests:
-      memory: "128Mi"
-      cpu: "100m"
-    limits:
-      memory: "512Mi"
-      cpu: "500m"
-  # Additional environment variables
-  env: []
-
 # Knowledge base configuration
 knowledgeBase:
   qdrant:
@@ -329,26 +238,32 @@ knowledgeBase:
   postmortemTemplateDir: /app/templates
   runbookDir: /app/runbooks
 
-# UI Backend configuration
-uiBackend:
+# Unified Backend configuration (replaces ui-backend, k8s-command-backend, and MongoDB)
+unifiedBackend:
   # Number of replicas to run
   replicas: 1
   # Image settings
   image:
-    repository: observability-agent-ui-backend
+    repository: observability-agent-unified-backend
     tag: latest
   # Service settings
   service:
     type: ClusterIP
     port: 5000
-  # Resource settings
+  # Resource settings (optimized for consolidated workload)
   resources:
     requests:
-      memory: "128Mi"
-      cpu: "100m"
+      memory: "300Mi"
+      cpu: "150m"
     limits:
-      memory: "256Mi"
-      cpu: "200m"
+      memory: "600Mi"
+      cpu: "400m"
+  # Cache configuration
+  cacheTTL: 300000  # 5 minutes in milliseconds
+  # Kubernetes configuration
+  kubeconfig:
+    enabled: true
+    secretName: "kubeconfig"
   # Additional environment variables
   env: []
 
@@ -375,56 +290,3 @@ ui:
   # Additional environment variables
   env: []
 
-# MongoDB configuration
-mongodb:
-  # Whether to deploy MongoDB as part of this chart
-  enabled: true
-  # MongoDB image configuration
-  image:
-    repository: mongo
-    tag: "6.0"
-    pullPolicy: IfNotPresent
-  # MongoDB resource requests and limits
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "200m"
-    limits:
-      memory: "512Mi"
-      cpu: "500m"
-  # MongoDB persistence settings
-  persistence:
-    enabled: true
-    size: 1Gi
-    storageClass: ""
-
-# K8s Command Backend configuration
-k8sCommandBackend:
-  # Number of replicas to run
-  replicas: 1
-  # Image settings
-  image:
-    repository: observability-agent-k8s-command-backend
-    tag: latest
-  # Service settings
-  service:
-    type: ClusterIP
-    port: 5002
-  # Resource settings
-  resources:
-    requests:
-      memory: "128Mi"
-      cpu: "100m"
-    limits:
-      memory: "256Mi"
-      cpu: "200m"
-  # MongoDB settings
-  mongodb:
-    uri: ""  # If empty, will use the MongoDB deployed by this chart
-  # Persistence settings
-  persistence:
-    enabled: true
-    size: 1Gi
-    storageClass: ""
-  # Additional environment variables
-  env: []

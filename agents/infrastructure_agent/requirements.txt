@@ -1,0 +1,30 @@
+# Core dependencies
+asyncio
+nats-py>=2.3.1
+crewai==0.120.1
+python-dotenv>=1.0.0
+psutil>=5.9.0
+
+# HTTP and data processing
+requests>=2.31.0
+urllib3>=2.0.0
+
+# Azure dependencies for infrastructure management
+azure-identity>=1.15.0
+azure-mgmt-monitor>=6.0.0
+azure-mgmt-containerservice>=28.0.0
+azure-mgmt-resource>=23.0.0
+azure-monitor-query>=1.2.0
+
+# Kubernetes and infrastructure tools
+kubernetes>=28.1.0
+kubernetes-asyncio>=28.2.0
+gitpython>=3.1.0
+pykube-ng>=22.9.0
+
+# Date/time utilities
+python-dateutil>=2.8.0
+
+# Additional tools for runbook execution
+pyyaml>=6.0.0
+jinja2>=3.1.2

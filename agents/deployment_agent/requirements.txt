@@ -1,5 +1,0 @@
-# Deployment specific dependencies
-kubernetes>=26.1.0
-GitPython>=3.1.30
-# ArgoCD specific dependencies
-argocd>=0.5.0

@@ -30,7 +30,7 @@ export default function RootCause() {
 
   useEffect(() => {
     // Fetch root cause analysis data from the API
-    api.get('/rootcause')
+    api.get('/api/rootcause')
       .then(res => {
         console.log('Root cause data:', res.data);
         setRootCauses(res.data);

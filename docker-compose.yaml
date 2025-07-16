@@ -6,7 +6,7 @@ services:
     ports:
       - "4222:4222"  # Client connections
       - "8222:8222"  # HTTP monitoring
-    command: "--jetstream --js_domain observability-agent"
+    command: "--jetstream"
     volumes:
       - nats-data:/data
     environment:
@@ -21,17 +21,20 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
 
-  metric_agent:
-    build: ./agents/metric_agent
+  observability_agent:
+    build: ./agents/observability_agent
     depends_on:
       - nats
     environment:
       - NATS_URL=nats://nats:4222
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus:9090}
+      - LOKI_URL=${LOKI_URL:-http://loki:3100}
+      - TEMPO_URL=${TEMPO_URL:-http://tempo:3200}
 
-  log_agent:
-    build: ./agents/log_agent
+  infrastructure_agent:
+    build: ./agents/infrastructure_agent
     depends_on:
       - nats
     volumes:
@@ -41,18 +44,19 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
       - KUBECONFIG=/root/.kube/config
+      - ARGOCD_SERVER=${ARGOCD_SERVER:-https://argocd-server.argocd:443}
 
-  deployment_agent:
-    build: ./agents/deployment_agent
+  communication_agent:
+    build: ./agents/communication_agent
     depends_on:
       - nats
-    volumes:
-      - ${HOME}/.kube:/root/.kube:ro
     environment:
       - NATS_URL=nats://nats:4222
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
-      - KUBECONFIG=/root/.kube/config
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - WEBEX_BOT_TOKEN=${WEBEX_BOT_TOKEN:-}
+      - PAGERDUTY_INTEGRATION_KEY=${PAGERDUTY_INTEGRATION_KEY:-}
 
   root_cause_agent:
     build: ./agents/root_cause_agent
@@ -63,17 +67,10 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
 
-  tracing_agent:
-    build: ./agents/tracing_agent
-    depends_on:
-      - nats
-    environment:
-      - NATS_URL=nats://nats:4222
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
-
-  runbook_agent:
-    build: ./agents/runbook_agent
+  unified_backend:
+    build: ./ui/unified-backend
+    ports:
+      - "5000:5000"
     depends_on:
       - nats
     volumes:
@@ -81,33 +78,9 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
       - KUBECONFIG=/root/.kube/config
-
-  notification_agent:
-    build: ./agents/notification_agent
-    depends_on:
-      - nats
-    environment:
-      - NATS_URL=nats://nats:4222
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
-
-  postmortem_agent:
-    build: ./agents/postmortem_agent
-    depends_on:
-      - nats
-    environment:
-      - NATS_URL=nats://nats:4222
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
-
-  ui_backend:
-    build: ./ui/backend
-    ports:
-      - "5000:5000"
-    environment:
-      - NATS_URL=nats://nats:4222
+      - PORT=5000
+      - CACHE_TTL=300000
 
   ui:
     build: ./ui
@@ -115,36 +88,9 @@ services:
       - "8080:80"
     depends_on:
       - orchestrator
-      - ui_backend
-      - k8s_command_backend
+      - unified_backend
     environment:
-      - BACKEND_SERVICE_URL=http://ui_backend:5000
-      - K8S_COMMAND_SERVICE_URL=http://k8s_command_backend:5002
-
-  mongodb:
-    image: mongo:6.0
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb-data:/data/db
-    environment:
-      - MONGO_INITDB_DATABASE=k8s-command
-
-  k8s_command_backend:
-    build: ./ui/k8s-command-backend
-    ports:
-      - "5002:5002"
-    depends_on:
-      - nats
-      - mongodb
-    volumes:
-      - ${HOME}/.kube:/root/.kube:ro
-    environment:
-      - NATS_URL=nats://nats:4222
-      - MONGODB_URI=mongodb://mongodb:27017/k8s-command
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - KUBECONFIG=/root/.kube/config
+      - BACKEND_SERVICE_URL=http://unified_backend:5000
 
 volumes:
   nats-data:
-  mongodb-data:

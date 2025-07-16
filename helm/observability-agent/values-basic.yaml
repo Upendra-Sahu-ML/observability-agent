@@ -1,0 +1,111 @@
+# Basic deployment mode - minimal runbook execution
+# For teams that want automated runbook execution with minimal observability dependencies
+
+# Deployment mode
+deployment:
+  mode: "basic"
+  description: "Minimal runbook execution with kubectl fallbacks"
+
+# OpenAI API settings (required)
+openai:
+  apiKey: "your_openai_api_key"
+  model: "gpt-4o-mini"  # Use cheaper model for basic mode
+
+# NATS service (required for all modes)
+nats:
+  enabled: true
+  persistence:
+    enabled: false  # Disable persistence for basic mode
+    memStorage: 1G
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Simplified agent configuration
+agents:
+  enabled:
+    # Core runbook execution
+    runbook_executor: true
+    incident_analyzer: true
+    
+    # Disable complex agents
+    observability: false
+    infrastructure: false
+    communication: false
+    rootCause: false
+
+# Minimal observability (optional)
+observability:
+  prometheus:
+    enabled: false
+    url: ""
+  loki:
+    enabled: false
+    url: ""
+  tempo:
+    enabled: false
+    url: ""
+
+# Basic notifications only
+notifications:
+  slack:
+    enabled: false
+    token: ""
+  pagerduty:
+    enabled: false
+    integrationKey: ""
+  webex:
+    enabled: false
+    token: ""
+
+# Simplified UI (optional)
+ui:
+  enabled: true
+  resources:
+    limits:
+      memory: 128Mi
+      cpu: 100m
+    requests:
+      memory: 64Mi
+      cpu: 50m
+
+# Unified backend with minimal features
+unifiedBackend:
+  enabled: true
+  features:
+    k8sCommands: true
+    notebooks: false
+    postmortems: false
+    fullObservability: false
+  resources:
+    limits:
+      memory: 256Mi
+      cpu: 200m
+    requests:
+      memory: 128Mi
+      cpu: 100m
+
+# Kubernetes integration (required for runbooks)
+kubernetes:
+  rbac:
+    enabled: true
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "deployments"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "replicasets"]
+        verbs: ["get", "list", "watch", "update", "patch"]
+
+# Resource limits for basic mode
+resources:
+  limits:
+    totalMemory: "1Gi"
+    totalCpu: "1000m"
+  requests:
+    totalMemory: "512Mi"
+    totalCpu: "500m"
