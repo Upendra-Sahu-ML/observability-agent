@@ -3,12 +3,27 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies for Azure CLI, kubectl, and infrastructure tools
 RUN apt-get update && apt-get install -y \
     curl \
+    wget \
+    gnupg \
+    lsb-release \
+    ca-certificates \
     git \
-    kubectl \
+    jq \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Azure CLI
+RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
+# Install kubectl
+RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+    && chmod +x kubectl \
+    && mv kubectl /usr/local/bin/
+
+# Install Helm (for deployment management)
+RUN curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .

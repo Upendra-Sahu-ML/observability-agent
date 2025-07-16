@@ -18,12 +18,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `cd ui && npm test` - Run frontend tests
 - `cd ui/unified-backend && npm start` - Start unified backend server
 
-### Data Generation and Testing
-- `cd scripts && npm install` - Install script dependencies
-- `node generate_all_data.js --duration=300` - Generate all test data
-- `node publish_core_data.js --component=metrics --count=50` - Generate specific data
-- `node create_ui_streams.js` - Initialize NATS streams
-- `node test_nats.js` - Test NATS connectivity
+### Data Generation and Testing (Python-based)
+- `cd scripts && pip install -r requirements.txt` - Install Python dependencies
+- `./run_tests.sh full` - Run complete test suite with data generation
+- `./generate_test_data.py --type=all --count=100` - Generate all test data
+- `./generate_test_data.py --type=alerts --count=10` - Generate specific data
+- `./nats_utils.py setup` - Initialize NATS streams
+- `./test_system.py --test=all` - Test system functionality
 
 ### Container Management (Consolidated)
 - `make orchestrator` - Build orchestrator image

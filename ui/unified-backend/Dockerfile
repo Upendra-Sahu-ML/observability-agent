@@ -2,8 +2,25 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Install system dependencies (only curl and kubectl - no database dependencies)
-RUN apk add --no-cache curl kubectl
+# Install system dependencies for Azure CLI, kubectl, and API tools
+RUN apk add --no-cache \
+    curl \
+    wget \
+    bash \
+    python3 \
+    py3-pip \
+    ca-certificates \
+    gnupg
+
+# Install Azure CLI (Alpine version)
+RUN apk add --no-cache --virtual .build-deps gcc musl-dev libffi-dev openssl-dev python3-dev \
+    && pip3 install azure-cli \
+    && apk del .build-deps
+
+# Install kubectl
+RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+    && chmod +x kubectl \
+    && mv kubectl /usr/local/bin/
 
 # Copy package files
 COPY package*.json ./

@@ -18,26 +18,37 @@ class SimplifiedToolManager:
     """
     
     def __init__(self, observability_manager=None, deployment_tools=None, 
-                 notification_tools=None, runbook_tools=None):
+                 notification_tools=None, runbook_tools=None, azure_monitor=None):
         self.observability_manager = observability_manager
         self.deployment_tools = deployment_tools
         self.notification_tools = notification_tools
         self.runbook_tools = runbook_tools
+        self.azure_monitor = azure_monitor
     
     # === OBSERVABILITY TOOLS (5 essential) ===
     
     @tool
     def get_service_metrics(self, service: str, namespace: str = "default") -> str:
         """
-        Get essential metrics for a service with intelligent fallbacks.
-        Returns CPU, memory, request rates, and error rates.
+        Get essential metrics for a service with Azure Monitor or kubectl fallbacks.
+        Returns JVM, application, and infrastructure metrics for PetClinic.
         """
         try:
-            if self.observability_manager:
-                metrics = self.observability_manager.get_metrics_or_fallback(service, namespace)
-                return f"Metrics for {service}: {metrics}"
+            if service == "petclinic" and self.observability_manager:
+                metrics = self.observability_manager.get_petclinic_metrics_or_fallback(service, namespace)
+                return f"PetClinic Metrics: {metrics}"
+            elif service == "postgresql" and self.observability_manager:
+                metrics = self.observability_manager.get_postgresql_metrics_or_fallback(service, namespace)
+                return f"PostgreSQL Metrics: {metrics}"
+            elif self.azure_monitor:
+                if service == "petclinic":
+                    jvm_metrics = self.azure_monitor.get_petclinic_jvm_metrics("PT1H")
+                    perf_metrics = self.azure_monitor.get_petclinic_performance_metrics("PT1H")
+                    return f"Azure Monitor - JVM: {jvm_metrics}, Performance: {perf_metrics}"
+                else:
+                    return f"Azure Monitor metrics not available for {service}. Use kubectl fallback."
             else:
-                return f"Observability manager not available. Use kubectl top pods -n {namespace}"
+                return f"Azure Monitor not available. Use kubectl top pods -n {namespace} -l app={service}"
         except Exception as e:
             logger.error(f"Failed to get metrics for {service}: {e}")
             return f"Failed to get metrics. Try: kubectl top pods -n {namespace} -l app={service}"
@@ -45,15 +56,18 @@ class SimplifiedToolManager:
     @tool
     def get_service_logs(self, service: str, namespace: str = "default", lines: int = 100) -> str:
         """
-        Get recent logs for a service with intelligent fallbacks.
-        Returns error patterns and performance issues.
+        Get recent logs for a service with Azure Monitor or kubectl fallbacks.
+        Returns application logs, error patterns, and Spring Boot specific logs.
         """
         try:
-            if self.observability_manager:
-                logs = self.observability_manager.get_logs_or_fallback(service, namespace, lines)
-                return f"Logs for {service}: {logs}"
+            if service == "petclinic" and self.observability_manager:
+                logs = self.observability_manager.get_petclinic_logs_or_fallback(service, namespace, lines)
+                return f"PetClinic Logs: {logs}"
+            elif self.azure_monitor and service == "petclinic":
+                app_logs = self.azure_monitor.get_petclinic_application_logs("PT1H", "Error")
+                return f"Azure Monitor Logs: {app_logs}"
             else:
-                return f"Observability manager not available. Use kubectl logs -n {namespace} -l app={service}"
+                return f"Azure Monitor not available. Use kubectl logs -n {namespace} -l app={service} --tail={lines}"
         except Exception as e:
             logger.error(f"Failed to get logs for {service}: {e}")
             return f"Failed to get logs. Try: kubectl logs -n {namespace} -l app={service} --tail={lines}"

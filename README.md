@@ -33,11 +33,17 @@ The system uses a **streamlined 4-agent architecture** instead of traditional 8+
 - ⚡ **Single Dependency**: Only NATS required for messaging and persistence
 - 🛡️ **Minimal Attack Surface**: Fewer services to secure and monitor
 
-## 🚀 Quick Start
+## 🚀 Quick Start Guide
 
-### Using Docker Compose (Recommended)
+### Prerequisites
+- Docker and Docker Compose (or Podman)
+- Kubernetes cluster (optional, for advanced deployment)
+- OpenAI API key
+- Python 3.8+ (for testing scripts)
+
+### 1. Basic Setup (Docker Compose)
 ```bash
-# Clone and start the system
+# Clone the repository
 git clone <repository-url>
 cd observability-agent
 
@@ -48,13 +54,413 @@ export OPENAI_API_KEY=your_openai_api_key
 make run
 # or: docker-compose up -d
 
-# Access the UI
-open http://localhost:8080
+# Check if services are running
+docker-compose ps
 ```
 
-### Using Kubernetes
+### 2. Test with Dummy Data (No External Dependencies)
 ```bash
-# Deploy with Helm
+# Install Python dependencies for testing
+cd scripts
+pip install -r requirements.txt
+
+# Run full test suite (generates data + tests everything)
+./run_tests.sh full
+
+# Or run step by step
+./run_tests.sh setup      # Setup NATS streams
+./run_tests.sh generate   # Generate test data
+./run_tests.sh test       # Run system tests
+```
+
+### 3. Access the UI
+```bash
+# Frontend (React UI)
+open http://localhost:3000
+
+# Backend API
+curl http://localhost:5000/api/health
+
+# NATS Management UI (optional)
+open http://localhost:8222
+```
+
+### 4. Advanced Kubernetes Deployment
+```bash
+# Deploy in basic mode (minimal resources)
+cd scripts
+./deploy-tiered.sh --mode=basic --api-key=$OPENAI_API_KEY
+
+# Deploy in standard mode (full observability)
+./deploy-tiered.sh --mode=standard --api-key=$OPENAI_API_KEY
+
+# Check deployment status
+kubectl get pods -n observability
+```
+
+## 🎯 Demo Use Cases & Scenarios
+
+### Use Case 1: PetClinic High Memory Usage
+**Scenario**: Spring Boot PetClinic experiencing JVM memory pressure  
+**Demo Flow**:
+1. **Generate Alert**: `./simulate_petclinic_alerts.py --scenario=memory_pressure`
+2. **Monitor UI**: Watch JVM memory alert appear in Dashboard
+3. **Azure Monitor Analysis**: Observability agent analyzes JVM heap metrics
+4. **Runbook Suggestion**: Infrastructure agent suggests JVM tuning runbook
+5. **Execution**: View automated JVM optimization steps
+6. **Resolution**: See memory usage normalized
+
+**UI Components**: Dashboard → Alerts → JVM Metrics → Runbooks → Status
+**Azure Monitor**: JVM heap usage, GC pause times, thread counts
+
+### Use Case 2: PostgreSQL Database Connection Issues
+**Scenario**: PetClinic cannot connect to PostgreSQL database  
+**Demo Flow**:
+1. **Trigger**: `./simulate_petclinic_alerts.py --scenario=database_outage`
+2. **Impact Analysis**: Multi-agent analysis of database connectivity
+3. **Root Cause**: Identify connection pool or database issues
+4. **Rollback**: Automated database restart or connection pool reset
+5. **Notification**: Teams alerts sent for critical database issue
+6. **Postmortem**: Automated incident documentation
+
+**UI Components**: Database → Connectivity → Runbooks → Communications
+**Azure Monitor**: Database connection metrics, query performance
+
+### Use Case 3: PetClinic Slow Response Times
+**Scenario**: Users experiencing slow page loads in PetClinic web interface  
+**Demo Flow**:
+1. **Pattern Recognition**: Azure Monitor detects response time degradation
+2. **Correlation**: Observability agent correlates slow database queries with response times
+3. **Analysis**: Identifies PostgreSQL performance bottlenecks
+4. **Proactive Action**: Suggests database optimization and JVM tuning
+5. **Monitoring**: Continuous tracking of response times and database performance
+6. **Learning**: System learns from resolution patterns
+
+**UI Components**: Performance → Database → JVM → Runbooks
+**Azure Monitor**: HTTP request duration, database query times, JVM metrics
+
+### Use Case 4: AKS Node Resource Pressure
+**Scenario**: Kubernetes nodes experiencing high CPU/memory usage affecting PetClinic  
+**Demo Flow**:
+1. **Error Detection**: Azure Monitor detects node resource pressure
+2. **Impact Analysis**: Identify affected pods and services (PetClinic, PostgreSQL)
+3. **Dependency Analysis**: Check cluster autoscaling and resource quotas
+4. **Escalation**: Automatic Teams notification for infrastructure team
+5. **Recovery**: Node scaling or pod rescheduling runbook
+6. **Validation**: Cluster health and application performance confirmation
+
+**UI Components**: Infrastructure → Cluster → Scaling → Runbooks
+**Azure Monitor**: AKS node metrics, pod resource usage, cluster events
+
+## 🖥️ UI Demo Guide
+
+### Dashboard Overview
+- **Real-time Alerts**: Live alert feed with severity indicators
+- **System Health**: Overall system status and metrics
+- **Agent Status**: Health of all 4 agents
+- **Recent Activity**: Timeline of recent incidents and resolutions
+
+### Key UI Features for Demo:
+1. **Interactive Alerts**: Click to drill down into incident details
+2. **Metrics Visualization**: Real-time graphs and charts
+3. **Log Search**: Query and filter logs across services
+4. **Runbook Execution**: Step-by-step runbook progress
+5. **Root Cause Analysis**: Visual correlation of findings
+6. **Notification History**: Track all sent notifications
+
+### Demo Data Generation:
+```bash
+# Generate realistic PetClinic demo scenario
+./generate_test_data.py --type=all --count=20
+
+# Generate specific incident types for PetClinic
+./generate_test_data.py --type=alerts --count=5      # PetClinic, PostgreSQL, AKS alerts
+./generate_test_data.py --type=metrics --count=100   # JVM, database, infrastructure metrics
+./generate_test_data.py --type=logs --count=200      # Spring Boot, PostgreSQL logs
+
+# Simulate realistic PetClinic incidents
+./simulate_petclinic_alerts.py --scenario=memory_pressure    # JVM memory issues
+./simulate_petclinic_alerts.py --scenario=database_outage    # DB connectivity issues
+./simulate_petclinic_alerts.py --scenario=high_load         # Performance degradation
+./simulate_petclinic_alerts.py --continuous=30              # 30 minutes of realistic alerts
+```
+
+## 🔧 Testing & Validation
+
+### Automated Testing
+```bash
+# Run comprehensive system tests
+./run_tests.sh full
+
+# Test specific components
+./test_system.py --test=observability  # Test fallback strategies
+./test_system.py --test=tools          # Test simplified tools
+./test_system.py --test=agents         # Test 4-agent architecture
+```
+
+### Manual Testing Scenarios
+```bash
+# Test 1: Basic Alert Processing
+./generate_test_data.py --type=alerts --count=1
+# Check UI for alert appearance and processing
+
+# Test 2: Agent Response
+./run_tests.sh generate --type=metrics --count=10
+# Verify agents process and respond to data
+
+# Test 3: Fallback Functionality
+# Stop external services (Prometheus, Loki)
+# Verify system continues with kubectl fallbacks
+```
+
+### Performance Testing
+```bash
+# Load test with high volume
+./generate_test_data.py --type=all --count=500
+
+# Memory usage check
+docker stats
+
+# Response time validation
+curl -w "%{time_total}" http://localhost:5000/api/health
+```
+
+## ⚙️ Configuration Options
+
+### Environment Variables
+```bash
+# Core Configuration
+export OPENAI_API_KEY="your-api-key"              # Required for AI agents
+export NATS_URL="nats://localhost:4222"           # NATS server URL
+export DEPLOYMENT_MODE="basic"                    # basic|standard|advanced
+
+# Azure Monitor Integration
+export AZURE_SUBSCRIPTION_ID="your-subscription-id"         # Azure subscription
+export AZURE_RESOURCE_GROUP="petclinic-rg"                 # Resource group for PetClinic
+export AZURE_LOG_ANALYTICS_WORKSPACE_ID="workspace-id"      # Log Analytics workspace
+# export AZURE_APPLICATION_INSIGHTS_ID="app-insights-id"   # Application Insights (OPTIONAL - requires code instrumentation)
+
+## Azure Monitor Components
+
+### Log Analytics Workspace (Required)
+- **Container logs**: Spring Boot application logs, PostgreSQL logs  
+- **AKS metrics**: Node performance, pod resource usage, cluster events
+- **No code changes needed**: Works with any containerized application
+
+### Application Insights (Optional)
+- **Detailed JVM metrics**: Heap usage, GC pause times, thread counts
+- **Request/response metrics**: HTTP response times, error rates, request counts  
+- **Requires code instrumentation**: Must add Application Insights SDK to PetClinic
+- **Fallback available**: System works without Application Insights
+
+# AKS Cluster Configuration
+export AKS_CLUSTER_NAME="aks-petclinic-cluster"           # AKS cluster name
+export AKS_RESOURCE_GROUP="petclinic-rg"                  # AKS resource group
+export KUBECONFIG="/path/to/kubeconfig"                   # Kubernetes config for AKS
+
+# Agent Configuration
+export ENABLE_OBSERVABILITY_AGENT="true"          # Unified observability with Azure Monitor
+export ENABLE_INFRASTRUCTURE_AGENT="true"         # AKS deployment + runbooks
+export ENABLE_COMMUNICATION_AGENT="true"          # Teams/Slack notifications + postmortems
+export ENABLE_ROOT_CAUSE_AGENT="true"            # Root cause analysis
+
+# PetClinic Application Configuration
+export PETCLINIC_NAMESPACE="default"              # Kubernetes namespace for PetClinic
+export POSTGRESQL_SERVICE="postgresql"            # PostgreSQL service name
+```
+
+### Deployment Modes
+1. **Basic Mode**: Minimal resources, kubectl fallbacks (~1Gi memory)
+2. **Standard Mode**: Full observability integration (~3Gi memory)
+3. **Advanced Mode**: All features enabled (~5Gi memory)
+
+### Helm Configuration
+```bash
+# Basic deployment
+helm install observability-agent ./helm/observability-agent \
+  --set openai.apiKey="$OPENAI_API_KEY" \
+  --set deployment.mode="basic"
+
+# Standard deployment with observability
+helm install observability-agent ./helm/observability-agent \
+  --set openai.apiKey="$OPENAI_API_KEY" \
+  --set deployment.mode="standard" \
+  --set observability.prometheus.enabled=true \
+  --set observability.loki.enabled=true
+```
+
+## 🚨 Troubleshooting
+
+### Common Issues & Solutions
+
+#### 1. NATS Connection Failed
+```bash
+# Check NATS is running
+docker-compose ps nats
+kubectl get pods -n observability -l app=nats
+
+# Test NATS connectivity
+./nats_utils.py health --nats-url=nats://localhost:4222
+
+# Restart NATS
+docker-compose restart nats
+```
+
+#### 2. Agents Not Responding
+```bash
+# Check agent logs
+docker-compose logs observability-agent
+kubectl logs -n observability -l app=observability-agent
+
+# Verify agent configuration
+./test_system.py --test=agents
+
+# Check OpenAI API key
+echo $OPENAI_API_KEY
+```
+
+#### 3. UI Not Loading
+```bash
+# Check UI services
+docker-compose ps ui unified-backend
+
+# Test backend API
+curl http://localhost:5000/api/health
+
+# Check frontend
+curl http://localhost:3000
+
+# Restart UI services
+docker-compose restart ui unified-backend
+```
+
+#### 4. External Dependencies Missing
+```bash
+# System works without external deps - uses kubectl fallbacks
+# Verify kubectl access
+kubectl get pods
+kubectl get deployments
+
+# Test fallback functionality
+./test_system.py --test=observability
+```
+
+#### 5. Memory Issues
+```bash
+# Switch to basic mode
+export DEPLOYMENT_MODE="basic"
+./deploy-tiered.sh --mode=basic --api-key=$OPENAI_API_KEY
+
+# Monitor resource usage
+docker stats
+kubectl top pods -n observability
+```
+
+### Logs & Debugging
+```bash
+# View all logs
+docker-compose logs -f
+
+# View specific service logs
+docker-compose logs observability-agent
+docker-compose logs nats
+
+# In Kubernetes
+kubectl logs -n observability -l app=observability-agent -f
+kubectl logs -n observability -l app=nats -f
+```
+
+## 📊 Monitoring & Metrics
+
+### Health Checks
+```bash
+# System health
+./run_tests.sh health
+
+# Individual components
+curl http://localhost:5000/api/health          # Backend
+curl http://localhost:3000                     # Frontend
+./nats_utils.py health                         # NATS
+```
+
+### Performance Metrics
+```bash
+# Resource usage
+docker stats
+
+# Response times
+curl -w "%{time_total}" http://localhost:5000/api/alerts
+
+# NATS stream info
+./nats_utils.py info --stream=ALERTS
+```
+
+## 📚 Documentation Structure
+
+### Core Documentation
+- **README.md** (this file) - Main usage guide and demo scenarios
+- **CLAUDE.md** - Development commands and architecture overview
+- **scripts/README.md** - Testing and data generation scripts
+
+### Detailed Documentation
+- **docs/ARCHITECTURE.md** - Technical architecture details
+- **docs/configuration.md** - Advanced configuration options
+- **docs/usage.md** - Detailed usage instructions
+
+### Agent Documentation
+- **agents/*/README.md** - Individual agent documentation
+- **orchestrator/README.md** - Orchestrator details
+- **ui/*/README.md** - UI component documentation
+
+## 🤝 Contributing
+
+### Development Setup
+```bash
+# Start development environment
+make run
+
+# Run tests
+cd scripts
+./run_tests.sh full
+
+# Check code quality
+make lint
+make typecheck
+```
+
+### Adding New Features
+1. Update agent code in `agents/*/`
+2. Add tests in `scripts/test_system.py`
+3. Update documentation
+4. Test with `./run_tests.sh full`
+
+## 📝 License
+
+[Add your license information here]
+
+---
+
+## 🎯 Quick Demo Commands
+
+```bash
+# 1. Start the system
+make run
+
+# 2. Generate demo data
+cd scripts && ./run_tests.sh full
+
+# 3. Open UI and explore
+open http://localhost:3000
+
+# 4. Generate specific scenarios
+./generate_test_data.py --type=alerts --count=5
+./generate_test_data.py --type=metrics --count=100
+
+# 5. Test system health
+./run_tests.sh health
+```
+
+The system is now ready for demonstration with realistic data and comprehensive testing capabilities!
 helm install observability-agent ./helm/observability-agent \
   --set openai.apiKey=your_openai_api_key \
   --set observabilityAgent.prometheus.url=http://prometheus:9090 \

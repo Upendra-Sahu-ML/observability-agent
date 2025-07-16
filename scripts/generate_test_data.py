@@ -84,17 +84,26 @@ class TestDataGenerator:
                     logger.error(f"Failed to create stream {stream_name}: {e}")
     
     def generate_alert(self, alert_id: str = None) -> Dict[str, Any]:
-        """Generate a realistic test alert"""
+        """Generate a realistic test alert for PetClinic and related services"""
         if not alert_id:
             alert_id = f"alert-{int(time.time())}-{random.randint(1000, 9999)}"
             
-        services = ["api-service", "web-service", "database-service", "cache-service", "auth-service"]
-        alert_types = ["HighCPUUsage", "HighMemoryUsage", "HighErrorRate", "ServiceDown", "HighLatency"]
+        # PetClinic-specific services and alerts
+        services = ["petclinic", "postgresql", "aks-cluster"]
+        petclinic_alerts = ["PetClinicHighMemoryUsage", "PetClinicSlowResponseTime", "PetClinicHighErrorRate", "PetClinicJVMGCPressure"]
+        postgresql_alerts = ["PostgreSQLSlowQueries", "PostgreSQLConnectionFailure", "PostgreSQLHighConnections"]
+        aks_alerts = ["AKSNodeResourcePressure", "AKSPodCrashLooping", "AKSStoragePressure"]
         severities = ["critical", "warning", "info"]
         
         service = random.choice(services)
-        alert_type = random.choice(alert_types)
         severity = random.choice(severities)
+        
+        if service == "petclinic":
+            alert_type = random.choice(petclinic_alerts)
+        elif service == "postgresql":
+            alert_type = random.choice(postgresql_alerts)
+        else:  # aks-cluster
+            alert_type = random.choice(aks_alerts)
         
         return {
             "alert_id": alert_id,
@@ -104,46 +113,138 @@ class TestDataGenerator:
                 "namespace": "default",
                 "severity": severity,
                 "environment": "production",
-                "team": "platform"
+                "team": "petclinic-team",
+                "application": "spring-boot" if service == "petclinic" else service,
+                "cluster": "aks-petclinic-cluster"
             },
             "annotations": {
                 "summary": f"{alert_type} detected on {service}",
-                "description": f"Service {service} is experiencing {alert_type.lower()} issues",
-                "runbook_url": f"https://runbooks.company.com/{alert_type.lower()}"
+                "description": f"Service {service} is experiencing {alert_type.lower()} issues in the PetClinic application",
+                "runbook_url": f"https://runbooks.company.com/petclinic/{alert_type.lower()}",
+                "azure_resource_id": f"/subscriptions/xxx/resourceGroups/petclinic-rg/providers/Microsoft.ContainerService/managedClusters/aks-petclinic"
+            },
+            "azure_monitor": {
+                "workspace_id": "xxx-workspace-id",
+                "query": f"customMetrics | where customDimensions.application == '{service}'",
+                "threshold_exceeded": True
+            },
+            "kubernetes": {
+                "namespace": "default",
+                "deployment": service,
+                "pod_selector": f"app={service}"
             },
             "timestamp": datetime.utcnow().isoformat(),
             "status": "firing"
         }
     
     def generate_metrics(self, service: str) -> Dict[str, Any]:
-        """Generate realistic metrics data"""
-        return {
+        """Generate realistic metrics data for PetClinic and related services"""
+        base_metrics = {
             "service": service,
             "namespace": "default",
             "timestamp": datetime.utcnow().isoformat(),
-            "metrics": {
+            "cluster": "aks-petclinic-cluster"
+        }
+        
+        if service == "petclinic":
+            # Java/Spring Boot specific metrics
+            base_metrics["metrics"] = {
+                "cpu_usage": round(random.uniform(20, 80), 2),
+                "memory_usage": round(random.uniform(40, 85), 2),
+                "jvm_heap_used": round(random.uniform(200, 800), 2),  # MB
+                "jvm_heap_max": 1024,  # MB
+                "jvm_threads_live": random.randint(20, 100),
+                "jvm_classes_loaded": random.randint(8000, 12000),
+                "jvm_gc_pause_time": round(random.uniform(10, 200), 2),  # ms
+                "request_rate": round(random.uniform(50, 300), 2),
+                "error_rate": round(random.uniform(0.1, 3.0), 2),
+                "response_time": round(random.uniform(100, 2000), 2),  # ms
+                "http_requests_total": random.randint(1000, 10000),
+                "http_requests_duration_p95": round(random.uniform(200, 1500), 2)
+            }
+        elif service == "postgresql":
+            # PostgreSQL specific metrics
+            base_metrics["metrics"] = {
+                "cpu_usage": round(random.uniform(10, 70), 2),
+                "memory_usage": round(random.uniform(30, 80), 2),
+                "active_connections": random.randint(5, 50),
+                "max_connections": 100,
+                "database_size_mb": round(random.uniform(100, 500), 2),
+                "query_duration_avg": round(random.uniform(10, 200), 2),  # ms
+                "slow_queries": random.randint(0, 5),
+                "deadlocks": random.randint(0, 2),
+                "commits_per_sec": round(random.uniform(10, 100), 2),
+                "rollbacks_per_sec": round(random.uniform(0, 5), 2),
+                "cache_hit_ratio": round(random.uniform(85, 99), 2)
+            }
+        else:
+            # Generic Kubernetes/AKS metrics
+            base_metrics["metrics"] = {
                 "cpu_usage": round(random.uniform(20, 95), 2),
                 "memory_usage": round(random.uniform(30, 90), 2),
-                "request_rate": round(random.uniform(100, 1000), 2),
-                "error_rate": round(random.uniform(0.1, 5.0), 2),
-                "response_time": round(random.uniform(50, 500), 2),
-                "active_connections": random.randint(10, 200)
+                "pod_count": random.randint(1, 10),
+                "ready_pods": random.randint(1, 8),
+                "network_rx_bytes": random.randint(1024, 1024*1024),
+                "network_tx_bytes": random.randint(1024, 1024*1024),
+                "storage_usage": round(random.uniform(20, 80), 2),
+                "node_ready": random.choice([True, False])
             }
-        }
+        
+        return base_metrics
     
     def generate_logs(self, service: str) -> Dict[str, Any]:
-        """Generate realistic log data"""
+        """Generate realistic log data for PetClinic and related services"""
         log_levels = ["INFO", "WARN", "ERROR", "DEBUG"]
-        log_messages = [
-            "Request processed successfully",
-            "Database connection established",
-            "Cache miss for key",
-            "Authentication successful",
-            "Rate limit exceeded",
-            "Internal server error",
-            "Connection timeout",
-            "Memory allocation failed"
-        ]
+        
+        if service == "petclinic":
+            # Spring Boot specific log messages
+            log_messages = [
+                "Started PetClinicApplication in 12.345 seconds",
+                "Initializing Spring DispatcherServlet 'dispatcherServlet'",
+                "HikariPool-1 - Start completed",
+                "Serving request GET /owners with parameters {}",
+                "JPA EntityManager creation completed",
+                "Hibernate: select owner0_.id as id1_0_ from owners owner0_",
+                "Processing owner registration for John Doe",
+                "Vet appointment scheduled successfully",
+                "Pet information updated for pet ID: 123",
+                "Database query completed in 45ms",
+                "Memory usage: 512MB / 1024MB (50%)",
+                "GC pause: 23ms (G1Young)",
+                "Connection pool stats: active=5, idle=15, max=20",
+                "Failed to process request: NullPointerException",
+                "Database connection timeout after 30s",
+                "OutOfMemoryError: Java heap space"
+            ]
+        elif service == "postgresql":
+            # PostgreSQL specific log messages
+            log_messages = [
+                "database system is ready to accept connections",
+                "autovacuum: processing database 'petclinic'",
+                "checkpoint starting: time",
+                "checkpoint complete: wrote 42 buffers",
+                "LOG: duration: 125.234 ms statement: SELECT * FROM owners",
+                "connection received: host=petclinic port=5432",
+                "connection authorized: user=petclinic database=petclinic",
+                "slow query detected: duration 2.5s",
+                "deadlock detected: process 1234 waits for process 5678",
+                "ERROR: connection to database failed",
+                "FATAL: password authentication failed for user 'petclinic'"
+            ]
+        else:
+            # Generic Kubernetes/AKS log messages
+            log_messages = [
+                "Pod started successfully",
+                "Container image pulled",
+                "Readiness probe succeeded",
+                "Liveness probe failed",
+                "Volume mount succeeded",
+                "Network policy applied",
+                "Service endpoint updated",
+                "ConfigMap reloaded",
+                "Secret mounted successfully",
+                "Pod terminating gracefully"
+            ]
         
         return {
             "service": service,
@@ -151,9 +252,11 @@ class TestDataGenerator:
             "timestamp": datetime.utcnow().isoformat(),
             "level": random.choice(log_levels),
             "message": random.choice(log_messages),
-            "pod": f"{service}-{random.randint(1000, 9999)}",
+            "pod": f"{service}-{random.randint(10000, 99999)}-{random.choice(['abcde', 'fghij', 'klmno'])}",
             "container": service,
-            "source": "application"
+            "source": "application",
+            "cluster": "aks-petclinic-cluster",
+            "node": f"aks-nodepool1-{random.randint(10000000, 99999999)}-vmss000000"
         }
     
     def generate_deployment(self, service: str) -> Dict[str, Any]:
@@ -200,9 +303,9 @@ class TestDataGenerator:
         logger.info(f"Published {count} alerts successfully")
     
     async def publish_metrics(self, count: int = 50):
-        """Publish test metrics"""
+        """Publish test metrics for PetClinic and related services"""
         logger.info(f"Publishing {count} test metrics...")
-        services = ["api-service", "web-service", "database-service", "cache-service", "auth-service"]
+        services = ["petclinic", "postgresql", "aks-cluster"]
         
         for i in range(count):
             service = random.choice(services)
@@ -211,12 +314,12 @@ class TestDataGenerator:
             if i % 10 == 0:
                 logger.info(f"Published {i+1}/{count} metrics")
             await asyncio.sleep(0.05)
-        logger.info(f"Published {count} metrics successfully")
+        logger.info(f"Published {count} PetClinic metrics successfully")
     
     async def publish_logs(self, count: int = 100):
-        """Publish test logs"""
+        """Publish test logs for PetClinic and related services"""
         logger.info(f"Publishing {count} test logs...")
-        services = ["api-service", "web-service", "database-service", "cache-service", "auth-service"]
+        services = ["petclinic", "postgresql", "aks-cluster"]
         
         for i in range(count):
             service = random.choice(services)
@@ -225,7 +328,7 @@ class TestDataGenerator:
             if i % 20 == 0:
                 logger.info(f"Published {i+1}/{count} logs")
             await asyncio.sleep(0.02)
-        logger.info(f"Published {count} logs successfully")
+        logger.info(f"Published {count} PetClinic logs successfully")
     
     async def publish_deployments(self, count: int = 20):
         """Publish test deployments"""

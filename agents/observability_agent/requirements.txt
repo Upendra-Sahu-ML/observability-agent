@@ -1,18 +1,28 @@
 # Core dependencies
 asyncio
-nats-py
-crewai
-python-dotenv
-psutil
+nats-py>=2.3.1
+crewai==0.120.1
+python-dotenv>=1.0.0
+psutil>=5.9.0
 
 # HTTP and data processing
-requests
-urllib3
+requests>=2.31.0
+urllib3>=2.0.0
 
-# Logging and monitoring
-logging
+# Azure dependencies for observability
+azure-identity>=1.15.0
+azure-mgmt-monitor>=6.0.0
+azure-monitor-query>=1.2.0
+
+# Kubernetes integration for fallback metrics
+kubernetes>=28.1.0
+
+# Observability tools
+prometheus-api-client>=0.5.4
 
 # Date/time utilities
-python-dateutil
+python-dateutil>=2.8.0
 
-# JSON processing (built-in with Python)
+# Configuration and templating
+pyyaml>=6.0.0
+jinja2>=3.1.2

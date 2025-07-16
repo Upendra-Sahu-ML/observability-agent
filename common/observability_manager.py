@@ -18,18 +18,199 @@ class ObservabilityManager:
     and provides fallback strategies for runbook execution.
     """
     
-    def __init__(self, prometheus_url=None, loki_url=None, tempo_url=None):
-        self.prometheus_url = prometheus_url
-        self.loki_url = loki_url
-        self.tempo_url = tempo_url
+    def __init__(self, azure_subscription_id=None, azure_resource_group=None, 
+                 azure_workspace_id=None, azure_app_insights_id=None):
+        # Azure Monitor configuration
+        self.azure_subscription_id = azure_subscription_id
+        self.azure_resource_group = azure_resource_group
+        self.azure_workspace_id = azure_workspace_id
+        self.azure_app_insights_id = azure_app_insights_id
         
-        # Test tool availability
-        self.prometheus_available = self._test_prometheus_connection()
-        self.loki_available = self._test_loki_connection()
-        self.tempo_available = self._test_tempo_connection()
+        # Initialize Azure Monitor tools
+        try:
+            from common.tools.azure_monitor_tools import AzureMonitorTools
+            self.azure_monitor = AzureMonitorTools(
+                subscription_id=azure_subscription_id,
+                resource_group=azure_resource_group,
+                workspace_id=azure_workspace_id,
+                app_insights_id=azure_app_insights_id
+            )
+            self.azure_available = True
+        except Exception as e:
+            logger.warning(f"Azure Monitor unavailable: {e}")
+            self.azure_monitor = None
+            self.azure_available = False
         
-        logger.info(f"Observability tools available: Prometheus={self.prometheus_available}, "
-                   f"Loki={self.loki_available}, Tempo={self.tempo_available}")
+        logger.info(f"Observability tools available: Azure Monitor={self.azure_available}, "
+                   f"kubectl fallback always available")
+    
+    def get_petclinic_metrics_or_fallback(self, service: str = "petclinic", namespace: str = "default") -> Dict[str, Any]:
+        """Get PetClinic-specific metrics from Azure Monitor or kubectl fallback"""
+        if self.azure_available and self.azure_monitor:
+            try:
+                # Get JVM and application metrics from Azure Monitor
+                jvm_metrics = self.azure_monitor.get_petclinic_jvm_metrics("PT1H")
+                perf_metrics = self.azure_monitor.get_petclinic_performance_metrics("PT1H")
+                
+                return {
+                    "source": "azure_monitor",
+                    "service": service,
+                    "namespace": namespace,
+                    "jvm_metrics": jvm_metrics,
+                    "performance_metrics": perf_metrics,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            except Exception as e:
+                logger.warning(f"Azure Monitor failed for PetClinic metrics, falling back to kubectl: {e}")
+        
+        return self._get_petclinic_kubectl_fallback(service, namespace)
+    
+    def get_postgresql_metrics_or_fallback(self, service: str = "postgresql", namespace: str = "default") -> Dict[str, Any]:
+        """Get PostgreSQL database metrics from Azure Monitor or kubectl fallback"""
+        if self.azure_available and self.azure_monitor:
+            try:
+                db_metrics = self.azure_monitor.get_postgresql_metrics("PT1H")
+                return {
+                    "source": "azure_monitor",
+                    "service": service,
+                    "namespace": namespace,
+                    "database_metrics": db_metrics,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            except Exception as e:
+                logger.warning(f"Azure Monitor failed for PostgreSQL metrics, falling back to kubectl: {e}")
+        
+        return self._get_postgresql_kubectl_fallback(service, namespace)
+    
+    def get_petclinic_logs_or_fallback(self, service: str = "petclinic", namespace: str = "default", lines: int = 100) -> Dict[str, Any]:
+        """Get PetClinic application logs from Azure Monitor or kubectl fallback"""
+        if self.azure_available and self.azure_monitor:
+            try:
+                app_logs = self.azure_monitor.get_petclinic_application_logs("PT1H", "Error")
+                return {
+                    "source": "azure_monitor",
+                    "service": service,
+                    "namespace": namespace,
+                    "application_logs": app_logs,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            except Exception as e:
+                logger.warning(f"Azure Monitor failed for PetClinic logs, falling back to kubectl: {e}")
+        
+        return self._get_kubectl_logs_fallback(service, namespace, lines)
+    
+    def _get_petclinic_kubectl_fallback(self, service: str, namespace: str) -> Dict[str, Any]:
+        """Get PetClinic metrics using kubectl commands"""
+        try:
+            # Get pod metrics
+            pod_metrics_cmd = [
+                "kubectl", "top", "pods", 
+                "-n", namespace, 
+                "-l", f"app={service}",
+                "--no-headers"
+            ]
+            
+            result = subprocess.run(pod_metrics_cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                total_cpu = 0
+                total_memory = 0
+                pod_count = 0
+                
+                for line in lines:
+                    if line.strip():
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            cpu_str = parts[1].replace('m', '')
+                            memory_str = parts[2].replace('Mi', '').replace('Gi', '')
+                            
+                            try:
+                                cpu_val = int(cpu_str) if 'm' in parts[1] else int(cpu_str) * 1000
+                                memory_val = int(memory_str) if 'Mi' in parts[2] else int(memory_str) * 1024
+                                
+                                total_cpu += cpu_val
+                                total_memory += memory_val
+                                pod_count += 1
+                            except ValueError:
+                                continue
+                
+                return {
+                    "source": "kubectl_fallback",
+                    "service": service,
+                    "namespace": namespace,
+                    "pod_count": pod_count,
+                    "total_cpu_millicores": total_cpu,
+                    "total_memory_mi": total_memory,
+                    "avg_cpu_per_pod": total_cpu / pod_count if pod_count > 0 else 0,
+                    "avg_memory_per_pod": total_memory / pod_count if pod_count > 0 else 0,
+                    "status": "healthy" if pod_count > 0 else "no_pods_found",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            else:
+                logger.error(f"kubectl top pods failed: {result.stderr}")
+                return self._get_basic_pod_status(service, namespace)
+                
+        except Exception as e:
+            logger.error(f"kubectl fallback failed: {e}")
+            return self._get_basic_pod_status(service, namespace)
+    
+    def _get_postgresql_kubectl_fallback(self, service: str, namespace: str) -> Dict[str, Any]:
+        """Get PostgreSQL metrics using kubectl commands"""
+        try:
+            # Get PostgreSQL pod status
+            pod_status_cmd = [
+                "kubectl", "get", "pods",
+                "-n", namespace,
+                "-l", f"app={service}",
+                "-o", "json"
+            ]
+            
+            result = subprocess.run(pod_status_cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                pods_data = json.loads(result.stdout)
+                pods = pods_data.get("items", [])
+                
+                db_info = {
+                    "source": "kubectl_fallback",
+                    "service": service,
+                    "namespace": namespace,
+                    "pod_count": len(pods),
+                    "running_pods": 0,
+                    "ready_pods": 0,
+                    "status": "unknown",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                
+                for pod in pods:
+                    pod_status = pod.get("status", {})
+                    phase = pod_status.get("phase", "")
+                    
+                    if phase == "Running":
+                        db_info["running_pods"] += 1
+                    
+                    conditions = pod_status.get("conditions", [])
+                    for condition in conditions:
+                        if condition.get("type") == "Ready" and condition.get("status") == "True":
+                            db_info["ready_pods"] += 1
+                            break
+                
+                if db_info["ready_pods"] > 0:
+                    db_info["status"] = "healthy"
+                elif db_info["running_pods"] > 0:
+                    db_info["status"] = "starting"
+                else:
+                    db_info["status"] = "unhealthy"
+                
+                return db_info
+            else:
+                logger.error(f"kubectl get pods failed: {result.stderr}")
+                return {"source": "kubectl_fallback", "error": "Failed to get pod status"}
+                
+        except Exception as e:
+            logger.error(f"PostgreSQL kubectl fallback failed: {e}")
+            return {"source": "kubectl_fallback", "error": str(e)}
     
     def _test_prometheus_connection(self) -> bool:
         """Test if Prometheus is available"""
