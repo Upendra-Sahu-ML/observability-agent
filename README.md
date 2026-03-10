@@ -1,4 +1,4 @@
-# Observability Agent
+# Observability Agent [DEPRECATED]
 
 A **simplified, database-free** distributed observability system that uses AI agents to analyze and respond to system events. Built for maximum efficiency with minimal operational overhead.
 
